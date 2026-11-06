@@ -527,11 +527,9 @@ struct CardView: View {
             }
             .overlay {
                 statusLayers(switching:previousStatus?.state.group != card.state.group) { card in
-                    RoundedRectangle(cornerRadius:1)
-                        .fill(PanelPalette.statusStripe(card.state.group,scheme,pulsing:pulse))
-                        .frame(width:2)
-                        .padding(.vertical,9)
-                        .frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.trailing)
+                    shape
+                        .strokeBorder(PanelPalette.statusStripe(card.state.group,scheme,pulsing:pulse),lineWidth:2)
+                        .mask(alignment:.trailing) { Rectangle().frame(width:7) }
                 }.accessibilityHidden(true).allowsHitTesting(false)
             }
             .overlay(alignment:.bottomLeading) { hoverPreview }

@@ -186,16 +186,20 @@ final class PanelModel: ObservableObject {
 
 private struct RunningCaptions: Codable {
     private static let verbs = [
-        "Шаманит", "Созидает", "Кряхтит", "Вершит", "Ковыряется",
-        "Изготавливает", "Превозмогает", "Кудесничает", "Пробует", "Содевает",
-        "Мудрит", "Творит", "Суетится", "Зиждет", "Импровизирует",
-        "Пыхтит", "Осуществляет", "Стряпает", "Изощряется", "Мастерит",
-        "Симулирует", "Свершает", "Возится", "Ваяет", "Утомляется",
-        "Претворяет", "Копошится", "Соображает", "Колдует", "Надрывается",
-        "Ладит", "Изобретает", "Трудится", "Телодвижется", "Создаёт",
-        "Химичит", "Корпит", "Воплощает", "Старается", "Производит",
-        "Выдумывает", "Изгаляется", "Исполняет", "Самореализуется", "Сооружает",
-        "Усердствует", "Пытается"
+        "Ковыряется", "Химичит", "Изобретает", "Колдует", "Изготавливает",
+        "Суетится", "Кочевряжится", "Симулирует", "Усердствует", "Креативит",
+        "Осуществляет", "Стряпает", "Свершает", "Копошится", "Пыхтюкает",
+        "Потеет", "Зиждет", "Изощряется", "Буксует", "Пытается",
+        "Имитирует", "Пилит", "Вершит", "Куражится", "Соображает",
+        "Ерзает", "Чудит", "Надрывается", "Барахтается", "Трудится",
+        "Ладит", "Шаманит", "Ваяет", "Утомляется", "Корпит",
+        "Производит", "Пробует", "Халтурит", "Изгаляется", "Тужится",
+        "Филонит", "Мается", "Крутится", "Старается", "Ухищряется",
+        "Выдумывает", "Содевает", "Мудрит", "Созидает", "Воплощает",
+        "Возится", "Кудесничает", "Пыхтит", "Превозмогает", "Напрягается",
+        "Творит", "Создаёт", "Сооружает", "Кряхтит", "Шуршит",
+        "Балагурит", "Исполняет", "Мастерит", "Пашет", "Претворяет",
+        "Импровизирует", "Хлопочет", "Кипит"
     ]
 
     private struct Assignment: Codable, Equatable {
@@ -211,12 +215,13 @@ private struct RunningCaptions: Codable {
     }
 
     private var entries: [ActivityCard.ID: Assignment] = [:]
-    // Legacy snapshots keep their assignments and start the new rotation at its first word.
-    private var nextCaptionIndex: Int?
+    // The new order has its own cursor. Existing assignments can still be reused.
+    private var nextCaptionIndexV2: Int?
 
     func verb(for card: ActivityCard) -> String? {
         guard let entry = entries[card.id], entry.matches(card) else { return nil }
-        return Self.currentSpelling(entry.verb)
+        let verb = Self.currentSpelling(entry.verb)
+        return Self.verbs.contains(verb) || verb == PanelModel.defaultRunningVerb ? verb : nil
     }
 
     mutating func assign(in cards: [ActivityCard], previous: [ActivityCard]) -> Bool {
@@ -253,13 +258,13 @@ private struct RunningCaptions: Codable {
     }
 
     private mutating func nextVerb(excluding used: Set<String>, previous: String?) -> String {
-        let start = nextCaptionIndex.flatMap { Self.verbs.indices.contains($0) ? $0 : nil } ?? 0
+        let start = nextCaptionIndexV2.flatMap { Self.verbs.indices.contains($0) ? $0 : nil } ?? 0
         let free = Self.verbs.indices.map { (start + $0) % Self.verbs.count }
             .filter { !used.contains(Self.verbs[$0]) }
         guard let index = free.first(where: { Self.verbs[$0] != previous }) ?? free.first else {
             return PanelModel.defaultRunningVerb
         }
-        nextCaptionIndex = (index + 1) % Self.verbs.count
+        nextCaptionIndexV2 = (index + 1) % Self.verbs.count
         return Self.verbs[index]
     }
 
