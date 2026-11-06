@@ -47,19 +47,19 @@ enum ChatGPTCatalog {
             case 3 where ActivityPolicy.includes(updatedAt:activity,pending:false,now:now,period:.day):
                 // STREAMING. The catalog has no turn start. Do not promote old cached streams.
                 status = .running
-                summary = source == .work ? "Работает над задачей" : "Генерирует ответ"
+                summary = source == .work ? "работает над задачей" : "генерирует ответ"
             case 4: // UNREAD, a completed asynchronous response.
                 status = .completed
-                summary = "Ответ готов"
+                summary = "ответ готов"
             default:
                 status = .unknown
-                summary = "Статус хода недоступен"
+                summary = "статус хода недоступен"
             }
 
             let title = row["display_title"]?.string?.trimmingCharacters(in:.whitespacesAndNewlines)
-            let project = row["project_id"]?.string == nil ? "Без проекта" : "Проект"
+            let project = row["project_id"]?.string == nil ? "без проекта" : "проект"
             return ActivityCard(threadID:id,hostID:hostID,source:source,
-                title:title.flatMap { $0.isEmpty || $0 == id ? nil : $0 } ?? "Без названия",
+                title:title.flatMap { $0.isEmpty || $0 == id ? nil : $0 } ?? "без названия",
                 project:project,summary:summary,state:status,updatedAt:activity)
         }
     }

@@ -7,12 +7,12 @@ public enum ActivityState: String, CaseIterable, Sendable {
     }
     public var label: String {
         switch self {
-        case .needsInput: return "Ждёт вас"
-        case .running: return "В работе"
-        case .completed: return "Готово"
-        case .failed: return "Ошибка"
-        case .paused: return "Остановлено"
-        case .unknown: return "Нет статуса"
+        case .needsInput: return "ждёт вас"
+        case .running: return "в работе"
+        case .completed: return "готово"
+        case .failed: return "ошибка"
+        case .paused: return "остановлено"
+        case .unknown: return "нет статуса"
         }
     }
     public var priority: Int {
@@ -30,7 +30,7 @@ public enum ActivityState: String, CaseIterable, Sendable {
 public enum ActivityGroup: Int, CaseIterable, Sendable {
     case attention, working, ready, other
     public var title:String {
-        switch self { case .attention:return "Ждёт вас"; case .working:return "В работе"; case .ready:return "Готово"; case .other:return "Другое" }
+        switch self { case .attention:return "ждёт вас"; case .working:return "в работе"; case .ready:return "готово"; case .other:return "другое" }
     }
 }
 
@@ -52,7 +52,7 @@ public enum ActivitySource: Equatable, Sendable {
     }
 
     public var label: String {
-        switch self { case .codex: return "Codex"; case .chatGPT: return "ChatGPT"; case .work: return "Work" }
+        switch self { case .codex: return "codex"; case .chatGPT: return "chatgpt"; case .work: return "work" }
     }
 }
 
@@ -113,7 +113,7 @@ public enum ActivityPeriod: Int, CaseIterable, Sendable {
         case .eightHours: return "8 часов"
         case .twelveHours: return "12 часов"
         case .day: return "24 часа"
-        case .unlimited: return "Без ограничения"
+        case .unlimited: return "без ограничения"
         }
     }
     public func cutoff(now: Date) -> Date? {

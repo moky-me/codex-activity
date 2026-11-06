@@ -18,7 +18,7 @@ final class ActivityWindow: NSPanel {
     override var canBecomeMain: Bool { false }
 
     func allSpacesMenuItem() -> NSMenuItem {
-        let item = NSMenuItem(title: "На всех рабочих столах", action: #selector(toggleAllSpaces(_:)), keyEquivalent: "")
+        let item = NSMenuItem(title: "на всех рабочих столах", action: #selector(toggleAllSpaces(_:)), keyEquivalent: "")
         item.target = self
         item.state = collectionBehavior.contains(.canJoinAllSpaces) ? .on : .off
         return item
@@ -71,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard !NSRunningApplication.runningApplications(withBundleIdentifier:AppIdentity.codex).isEmpty else { NSApp.terminate(nil); return }
         NSApp.setActivationPolicy(.accessory)
         panel=ActivityWindow(contentRect:NSRect(x:0,y:0,width:140,height:620),styleMask:[.borderless,.nonactivatingPanel,.resizable],backing:.buffered,defer:false)
-        panel.title="Codex Activity"; panel.identifier=NSUserInterfaceItemIdentifier("CodexActivityPanel")
+        panel.title="codex activity community"; panel.identifier=NSUserInterfaceItemIdentifier("CodexActivityPanel")
         panel.isOpaque=false; panel.backgroundColor = .clear; panel.hasShadow=true
         panel.hidesOnDeactivate=false
         panel.isMovableByWindowBackground=false; panel.delegate=self

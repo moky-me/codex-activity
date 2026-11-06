@@ -27,16 +27,16 @@ struct PanelView: View {
             ZStack(alignment:.topTrailing) {
                 VStack(alignment:.leading,spacing:3) {
                     HStack(spacing:4) {
-                        Text("Codex").foregroundStyle(PanelPalette.ink(scheme)).font(.system(size:14,weight:.semibold))
+                        Text("codex").foregroundStyle(PanelPalette.ink(scheme)).font(.system(size:14,weight:.semibold))
                             .accessibilityAddTraits(.isHeader)
                         headerDot
                     }.frame(height:menuSize.height)
                     ViewThatFits(in:.horizontal) {
-                        Text("Наблюдение · \(periodValue)").fixedSize(horizontal:true,vertical:false)
-                        Text("Период · \(periodValue)")
+                        Text("наблюдение · \(periodValue)").fixedSize(horizontal:true,vertical:false)
+                        Text("период · \(periodValue)")
                     }.font(.system(size:11,weight:.medium)).foregroundStyle(PanelPalette.muted(scheme))
                         .lineLimit(1)
-                        .accessibilityLabel("Наблюдение: \(model.period.label.lowercased())")
+                        .accessibilityLabel("наблюдение: \(model.period.label.lowercased())")
                 }.frame(maxWidth:.infinity,alignment:.leading)
                     .padding(.horizontal,headerInset).padding(.top,headerTop).padding(.bottom,8)
                     .overlay { HeaderDrag().accessibilityHidden(true) }
@@ -52,10 +52,16 @@ struct PanelView: View {
                 .animation(PanelMotion.feedback.animation(reduceMotion:reduceMotion),value:contentState)
             VStack(spacing:0) {
                 if let notice {
-                    Button { let alert=NSAlert(); alert.messageText="Codex Activity"; alert.informativeText=notice; alert.runModal() } label: {
-                        Label("Есть уведомление",systemImage:"exclamationmark.circle").font(.system(size:9)).foregroundStyle(PanelPalette.statusText(.needsInput,scheme)).lineLimit(1)
+                    Button {
+                        let alert = NSAlert()
+                        alert.messageText = "codex activity community"
+                        alert.informativeText = notice
+                        alert.addButton(withTitle: "закрыть")
+                        alert.runModal()
+                    } label: {
+                        Label("есть уведомление",systemImage:"exclamationmark.circle").font(.system(size:9)).foregroundStyle(PanelPalette.statusText(.needsInput,scheme)).lineLimit(1)
                     }.buttonStyle(.plain).padding(.horizontal,8).padding(.vertical,7).help(notice)
-                        .accessibilityHint("Показать подробности")
+                        .accessibilityHint("показать подробности")
                         .transition(.opacity)
                 }
             }.animation(PanelMotion.feedback.animation(reduceMotion:reduceMotion),value:notice != nil)
@@ -94,15 +100,15 @@ struct PanelView: View {
     @ViewBuilder private func content(spacing: PanelSpacing) -> some View {
         switch contentState {
         case .loading:
-            VStack(spacing:10) { ProgressView().controlSize(.small); Text("Читаю чаты…").font(.system(size:10)).foregroundStyle(PanelPalette.muted(scheme)) }
+            VStack(spacing:10) { ProgressView().controlSize(.small); Text("читаю чаты…").font(.system(size:10)).foregroundStyle(PanelPalette.muted(scheme)) }
                 .frame(maxWidth:.infinity,maxHeight:.infinity)
                 .transition(.opacity)
         case .empty:
             VStack(spacing:10) {
                 Image(systemName:model.notice == nil ? "moon.zzz" : "exclamationmark.icloud").font(.system(size:20,weight:.ultraLight)).foregroundStyle(PanelPalette.muted(scheme))
                     .accessibilityHidden(true)
-                Text(model.notice == nil ? "Сейчас тихо" : "Данные недоступны").foregroundStyle(PanelPalette.ink(scheme)).font(.system(size:11,weight:.medium))
-                Text(model.notice == nil ? emptyDescription : "Не удалось прочитать\nчаты Codex. Повторим\nавтоматически.").font(.system(size:10)).foregroundStyle(PanelPalette.muted(scheme)).multilineTextAlignment(.center)
+                Text(model.notice == nil ? "сейчас тихо" : "данные недоступны").foregroundStyle(PanelPalette.ink(scheme)).font(.system(size:11,weight:.medium))
+                Text(model.notice == nil ? emptyDescription : "не удалось прочитать\nчаты codex. повторим\nавтоматически.").font(.system(size:10)).foregroundStyle(PanelPalette.muted(scheme)).multilineTextAlignment(.center)
             }.frame(maxWidth:.infinity,maxHeight:.infinity)
                 .transition(.opacity)
         case .list:
@@ -112,12 +118,22 @@ struct PanelView: View {
 
     private var emptyDescription: String {
         model.period == .unlimited
-            ? "Здесь появятся ваши\nнеархивированные чаты."
-            : "Здесь появятся чаты\nза последние \(model.period.label)\nи ожидающие ответа."
+            ? "здесь появятся ваши\nнеархивированные чаты."
+            : "здесь появятся чаты\nза последние \(model.period.label)\nи ожидающие ответа."
     }
     private func showAbout() {
-        let alert=NSAlert(); alert.messageText="Codex Activity"
-        alert.informativeText="Нативная панель чатов Codex. Период отслеживания: \(model.period.label.lowercased()). Чаты, ожидающие вашего ответа или разрешения, показаны независимо от периода.\n\nНажмите карточку, чтобы открыть чат. Перетаскивайте панель за шапку. Двойной щелчок по шапке разворачивает панель на доступную высоту экрана или возвращает прежний размер. Ширина адаптируется к дисплею.\n\nСостояния читаются из истории и потоков Codex и могут запаздывать. Удалённые статусы видны, когда Codex передаёт состояние чата.\n\nSwiftUI · AppKit · ServiceManagement\nВерсия 1.0 · локальная сборка"
+        let alert = NSAlert()
+        alert.messageText = "codex activity community"
+        let version = Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String
+        let build = Bundle.main.object(forInfoDictionaryKey:"CFBundleVersion") as? String
+        let versionInfo = version.map { "версия \($0)" + (build.map { " · сборка \($0)" } ?? "") }
+        alert.informativeText = [
+            "панель чатов codex · \(model.period.label)",
+            "нажмите карточку, чтобы открыть чат codex или локального work. перетаскивайте окно за шапку. двойной щелчок разворачивает или восстанавливает окно.",
+            "запросы, ожидающие ответа, видны независимо от периода. удалённые статусы появляются, когда codex передаёт состояние чата.",
+            versionInfo
+        ].compactMap { $0 }.joined(separator:"\n\n")
+        alert.addButton(withTitle: "закрыть")
         alert.runModal()
     }
 }
@@ -146,7 +162,7 @@ private struct PanelMenu: NSViewRepresentable {
         @objc func showMenu(_ sender: NSButton) {
             let menu = NSMenu()
             menu.autoenablesItems = false
-            let periods = NSMenu(title: "Период отслеживания")
+            let periods = NSMenu(title: "период отслеживания")
             periods.autoenablesItems = false
             for period in ActivityPeriod.allCases {
                 let option = item(period.label, action: .period(period))
@@ -157,25 +173,25 @@ private struct PanelMenu: NSViewRepresentable {
             periodMenu.submenu = periods
             menu.addItem(periodMenu)
             menu.addItem(.separator())
-            let cloudChats = item("Показывать облачные чаты", action: .toggleCloudChats)
+            let cloudChats = item("показывать облачные чаты", action: .toggleCloudChats)
             cloudChats.state = model.showsCloudChats ? .on : .off
             menu.addItem(cloudChats)
-            let tokens = item("Показать токены", action: .toggleTokens)
+            let tokens = item("показать токены", action: .toggleTokens)
             tokens.state = model.showsTokens ? .on : .off
             menu.addItem(tokens)
             if let panel = sender.window as? ActivityWindow {
                 menu.addItem(panel.allSpacesMenuItem())
             }
-            let autostart = item("Запускать вместе с Codex", action: .toggleAutostart)
+            let autostart = item("запускать вместе с codex", action: .toggleAutostart)
             autostart.state = model.launchEnabled ? .on : .off
             autostart.isEnabled = !model.launchChanging
             menu.addItem(autostart)
             if model.launchNeedsApproval {
-                menu.addItem(item("Разрешить в настройках macOS…", action: .loginSettings))
+                menu.addItem(item("разрешить в настройках macos…", action: .loginSettings))
             }
             menu.addItem(.separator())
-            menu.addItem(item("О панели…", action: .about))
-            let close = item("Закрыть панель", action: .close)
+            menu.addItem(item("о панели…", action: .about))
+            let close = item("закрыть панель", action: .close)
             close.keyEquivalent = "q"
             menu.addItem(close)
             let y = sender.isFlipped ? sender.bounds.maxY : sender.bounds.minY
@@ -225,8 +241,8 @@ private struct PanelMenu: NSViewRepresentable {
         let configuration = NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
         button.image = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: nil)?
             .withSymbolConfiguration(configuration)
-        button.toolTip = "Настройки панели"
-        button.setAccessibilityLabel("Настройки панели")
+        button.toolTip = "настройки панели"
+        button.setAccessibilityLabel("настройки панели")
         button.target = context.coordinator
         button.action = #selector(Coordinator.showMenu(_:))
         button.frame = container.bounds
@@ -381,6 +397,7 @@ struct CardView: View {
     @State private var pulse = false
     @State private var eventTask: Task<Void,Never>?
     @State private var elapsedClock = Date()
+    private var runningCaption: String { runningVerb.lowercased() }
     private let shape = RoundedRectangle(cornerRadius:9,style:.continuous)
     private static let russian = Locale(identifier:"ru_RU")
     private var settledState: ActivityState {
@@ -388,9 +405,9 @@ struct CardView: View {
     }
     private var status: String { card.state.label }
     private var sourceLabel: String {
-        card.source == .work && card.isChatGPTHosted ? "Облачный Work" : card.source.label
+        card.source == .work && card.isChatGPTHosted ? "облачный work" : card.source.label
     }
-    private static let openHint = "Открыть чат в приложении"
+    private static let openHint = "открыть чат в приложении"
     private var age: String { ActivityPolicy.age(card.updatedAt) }
     private var tokenValues: CardTokenRow.Values? {
         guard ActivityListLayout.showsTokenRow(for:card,showsTokens:showsTokens) else { return nil }
@@ -414,15 +431,15 @@ struct CardView: View {
     private var timingDescription: String {
         switch card.state {
         case .running:
-            return elapsed(for:card).map { "\(runningVerb) \(Self.spokenDuration($0))" } ?? runningVerb
+            return elapsed(for:card).map { "\(runningCaption) \(Self.spokenDuration($0))" } ?? runningCaption
         case .needsInput:
-            return "Время ожидания: \(waitingAge(for:card))"
+            return "время ожидания: \(waitingAge(for:card))"
         case .completed:
-            let duration = card.turnDuration.map { "Ход занял \(Self.spokenDuration($0))" }
-            let finished = card.turnCompletedAt.map { "Завершён \(Self.completionTimestamp($0))" }
+            let duration = card.turnDuration.map { "ход занял \(Self.spokenDuration($0))" }
+            let finished = card.turnCompletedAt.map { "завершён \(Self.completionTimestamp($0))" }
             return [duration, finished].compactMap { $0 }.joined(separator:". ")
         default:
-            return "Последняя активность: \(age)"
+            return "последняя активность: \(age)"
         }
     }
 
@@ -527,9 +544,11 @@ struct CardView: View {
             }
             .overlay {
                 statusLayers(switching:previousStatus?.state.group != card.state.group) { card in
-                    shape
-                        .strokeBorder(PanelPalette.statusStripe(card.state.group,scheme,pulsing:pulse),lineWidth:2)
-                        .mask(alignment:.trailing) { Rectangle().frame(width:7) }
+                    RoundedRectangle(cornerRadius:1)
+                        .fill(PanelPalette.statusStripe(card.state.group,scheme,pulsing:pulse))
+                        .frame(width:2)
+                        .padding(.vertical,9)
+                        .frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.trailing)
                 }.accessibilityHidden(true).allowsHitTesting(false)
             }
             .overlay(alignment:.bottomLeading) { hoverPreview }
@@ -589,10 +608,10 @@ struct CardView: View {
         case .running:
             ViewThatFits(in:.horizontal) {
                 if let seconds = elapsed(for:card) {
-                    Text("\(runningVerb) \(Self.compactDuration(seconds))").fixedSize()
-                    Text("\(runningVerb) \(Self.shortRunningDuration(seconds))").fixedSize()
+                    Text("\(runningCaption) \(Self.compactDuration(seconds))").fixedSize()
+                    Text("\(runningCaption) \(Self.shortRunningDuration(seconds))").fixedSize()
                 }
-                Text(runningVerb).lineLimit(1)
+                Text(runningCaption).lineLimit(1)
             }.foregroundStyle(statusColor)
         case .completed:
             if card.turnDuration != nil || card.turnCompletedAt != nil {
@@ -628,7 +647,7 @@ struct CardView: View {
                 timeLabel(Self.completionLabel(date, short:shortDate), symbol:showSymbols ? "flag.checkered" : nil)
                     .foregroundStyle(PanelPalette.muted(scheme))
                     .layoutPriority(1)
-                    .help("Завершён \(Self.completionTimestamp(date))")
+                    .help("завершён \(Self.completionTimestamp(date))")
             }
         }
     }
@@ -739,7 +758,7 @@ struct CardTokenRow: View {
         }
 
         var isWaiting: Bool { turn == .waiting || chat == .waiting }
-        var details: String { "Токены\nЗа ход: \(turn.detail)\nЗа чат: \(chat.detail)" }
+        var details: String { "токены\nза ход: \(turn.detail)\nза чат: \(chat.detail)" }
     }
 
     let values: Values
