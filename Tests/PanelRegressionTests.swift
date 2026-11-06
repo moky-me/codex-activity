@@ -106,24 +106,16 @@ private final class HeaderTestPanel: NSPanel {
             ActivityCard(threadID:String(index),title:"Test",project:"Test",summary:"",state:state,
                          updatedAt:start.addingTimeInterval(10),turnStartedAt:start.addingTimeInterval(shift),turnID:turn)
         }
-        let verbs = [
-            "Ковыряется", "Химичит", "Изобретает", "Колдует", "Изготавливает",
-            "Суетится", "Кочевряжится", "Симулирует", "Усердствует", "Креативит",
-            "Осуществляет", "Стряпает", "Свершает", "Копошится", "Пыхтюкает",
-            "Потеет", "Зиждет", "Изощряется", "Буксует", "Пытается",
-            "Имитирует", "Пилит", "Вершит", "Куражится", "Соображает",
-            "Ерзает", "Чудит", "Надрывается", "Барахтается", "Трудится",
-            "Ладит", "Шаманит", "Ваяет", "Утомляется", "Корпит",
-            "Производит", "Пробует", "Халтурит", "Изгаляется", "Тужится",
-            "Филонит", "Мается", "Крутится", "Старается", "Ухищряется",
-            "Выдумывает", "Содевает", "Мудрит", "Созидает", "Воплощает",
-            "Возится", "Кудесничает", "Пыхтит", "Превозмогает", "Напрягается",
-            "Творит", "Создаёт", "Сооружает", "Кряхтит", "Шуршит",
-            "Балагурит", "Исполняет", "Мастерит", "Пашет", "Претворяет",
-            "Импровизирует", "Хлопочет", "Кипит"
-        ]
-        let count = verbs.count
+        let count = 84
         let running = (0..<count).map { card($0) }
+        let referenceSuite = suite + ".reference"
+        let referencePreferences = UserDefaults(suiteName:referenceSuite)!
+        defer { referencePreferences.removePersistentDomain(forName:referenceSuite) }
+        let reference = PanelModel(loginService:FakeLoginService(),preferences:referencePreferences)
+        reference.cards = running
+        let verbs = running.map { reference.runningVerb(for:$0) }
+        precondition(Set(verbs).count == count && !verbs.contains("Делает"),
+                     "The full cycle must assign 84 distinct captions before overflow")
         model.cards = Array(running.prefix(10))
         precondition(model.cards.map { model.runningVerb(for:$0) } == Array(verbs.prefix(10)),
                      "New turns must use the given order")
@@ -133,7 +125,7 @@ private final class HeaderTestPanel: NSPanel {
                      "Restart must resume the cycle even when earlier words are free")
         restarted.cards = running
         precondition(running.map { restarted.runningVerb(for:$0) } == verbs,
-                     "Simultaneous turns must use all 68 different words in order")
+                     "Simultaneous turns must use all 84 different words in order")
         restarted.cards = Array(running.reversed()) + [card(count)]
         precondition(running.map { restarted.runningVerb(for:$0) } == verbs &&
                      restarted.runningVerb(for:card(count)) == "Делает",
@@ -161,19 +153,26 @@ private final class HeaderTestPanel: NSPanel {
         let migrated = PanelModel(loginService:FakeLoginService(),preferences:preferences)
         migrated.cards = [card(3), card(count+4)]
         precondition(migrated.runningVerb(for:card(3)) == "Создаёт" &&
-                     migrated.runningVerb(for:card(count+4)) == "Ковыряется",
+                     migrated.runningVerb(for:card(count+4)) == verbs.first(where: { $0 != "Создаёт" }),
                      "Legacy snapshots keep current words and start the new order from the beginning")
         let previousOrder = #"{"nextCaptionIndex":15,"entries":{"local:3":{"turnID":"first","verb":"Телодвижется"},"local:4":{"turnID":"first","verb":"Колдует"}}}"#
         preferences.set(Data(previousOrder.utf8),forKey:"runningCaptions")
         let updated = PanelModel(loginService:FakeLoginService(),preferences:preferences)
         updated.cards = [card(3), card(4)]
-        precondition(updated.runningVerb(for:card(3)) == "Ковыряется" &&
+        precondition(updated.runningVerb(for:card(3)) == verbs.first(where: { $0 != "Колдует" }) &&
                      updated.runningVerb(for:card(4)) == "Колдует",
                      "Changing the order replaces excluded words and preserves allowed assignments")
         let updatedRestart = PanelModel(loginService:FakeLoginService(),preferences:preferences)
         updatedRestart.cards = [card(count+5)]
-        precondition(updatedRestart.runningVerb(for:card(count+5)) == "Химичит",
+        precondition(updatedRestart.runningVerb(for:card(count+5)) == verbs[verbs[0] == "Колдует" ? 2 : 1],
                      "The new cursor persists after migration")
+        let currentOrder = #"{"nextCaptionIndexV2":15,"entries":{"local:4":{"turnID":"first","verb":"Колдует"}}}"#
+        preferences.set(Data(currentOrder.utf8),forKey:"runningCaptions")
+        let extended = PanelModel(loginService:FakeLoginService(),preferences:preferences)
+        extended.cards = [card(4),card(count+6)]
+        precondition(extended.runningVerb(for:card(4)) == "Колдует" &&
+                     extended.runningVerb(for:card(count+6)) == verbs[15...].first(where: { $0 != "Колдует" }),
+                     "Updating the list preserves the stored cursor and assigned words")
     }
 
     @MainActor private static func testGroupMoveAtScrollLimit(model: PanelModel) {
