@@ -22,6 +22,9 @@ struct CardView: View {
     @State private var eventTask: Task<Void,Never>?
     @State private var elapsedClock = Date()
     private var runningCaption: String { runningVerb.lowercased() }
+    private var title: String { card.title.lowercased() }
+    private var project: String { card.project.lowercased() }
+    private var summary: String { card.summary.lowercased() }
     private let shape = RoundedRectangle(cornerRadius:9,style:.continuous)
     private static let russian = Locale(identifier:"ru_RU")
     private var settledState: ActivityState {
@@ -87,9 +90,9 @@ struct CardView: View {
             withAnimation(PanelMotion.feedback.animation(reduceMotion:reduceMotion)) { hover=value && canOpen }
             if !value { durationHovered=false; tokensHovered=false }
         }
-        .help([card.title, "\(sourceLabel) · \(card.project) · \(status)", details, tokens, card.summary, canOpen ? Self.openHint : ""]
+        .help([title, "\(sourceLabel) · \(project) · \(status)", details, tokens, summary, canOpen ? Self.openHint : ""]
             .filter { !$0.isEmpty }.joined(separator:"\n"))
-        .accessibilityLabel([card.title, sourceLabel, card.project, status, details, tokens, card.summary]
+        .accessibilityLabel([title, sourceLabel, project, status, details, tokens, summary]
             .filter { !$0.isEmpty }.joined(separator:". "))
         .task(id: visible ? timerStart : nil) {
             guard visible, let start = timerStart else { return }
@@ -125,8 +128,8 @@ struct CardView: View {
     private func surface(tokenValues: CardTokenRow.Values?) -> some View {
         VStack(alignment:.leading,spacing:0) {
             VStack(alignment:.leading,spacing:7) {
-                VStack(alignment:.leading,spacing:2) {
-                    Text(card.title).font(.system(size:11.5,weight:.semibold))
+                VStack(alignment:.leading,spacing:4) {
+                    Text(title).font(.system(size:11.5,weight:.semibold))
                         .foregroundStyle(PanelPalette.ink(scheme)).lineLimit(2)
                         .fixedSize(horizontal:false,vertical:true)
                         .frame(maxWidth:.infinity,alignment:.leading)
@@ -134,12 +137,16 @@ struct CardView: View {
                         Text(card.source.badge)
                             .font(.system(size:9,weight:.semibold))
                             .frame(width:14,height:14)
-                            .background(PanelPalette.sourceBadge(scheme),in:RoundedRectangle(cornerRadius:3))
+                            .background {
+                                RoundedRectangle(cornerRadius:3)
+                                    .fill(PanelPalette.sourceBadge(scheme))
+                                    .shadow(color:.black.opacity(scheme == .dark ? 0.24 : 0.12), radius:1, y:1)
+                            }
                             .accessibilityHidden(true)
-                        Text(card.project).font(.system(size:10)).lineLimit(1)
+                        Text(project).font(.system(size:10)).lineLimit(1)
                     }.foregroundStyle(PanelPalette.project(scheme))
                 }
-                Text(card.summary).font(.system(size:10.5))
+                Text(summary).font(.system(size:10.5))
                     .foregroundStyle(PanelPalette.ink(scheme)).lineLimit(2).lineSpacing(1)
                     .fixedSize(horizontal:false,vertical:true)
                     .frame(maxWidth:.infinity,alignment:.leading)
