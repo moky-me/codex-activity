@@ -15,8 +15,8 @@ ditto -c -k --norsrc --keepParent "build/$app" "$stage/$archive"
 ditto -x -k "$stage/$archive" "$stage/unpacked"
 unpacked="$stage/unpacked/$app"
 codesign --verify --deep --strict --all-architectures "$unpacked"
-lipo -verify_arch arm64 x86_64 "$unpacked/Contents/MacOS/CodexActivity"
-lipo -verify_arch arm64 x86_64 "$unpacked/Contents/Library/LoginItems/ActivityLauncher.app/Contents/MacOS/ActivityLauncher"
+lipo "$unpacked/Contents/MacOS/CodexActivity" -verify_arch arm64 x86_64
+lipo "$unpacked/Contents/Library/LoginItems/ActivityLauncher.app/Contents/MacOS/ActivityLauncher" -verify_arch arm64 x86_64
 
 (
     cd "$stage"
