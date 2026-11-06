@@ -118,7 +118,7 @@ final class PanelModel: ObservableObject {
                     self.cards = snapshot.cards; self.notice = snapshot.notice
                 case .failure:
                     self.cards.removeAll(where:\.isChatGPTHosted)
-                    self.notice = self.cards.isEmpty ? "Не удалось прочитать данные Codex." : "Не удалось прочитать данные Codex. Показаны последние известные состояния."
+                    self.notice = self.cards.isEmpty ? "не удалось прочитать данные codex." : "не удалось прочитать данные codex. показаны последние известные состояния."
                 }
             }
         }
@@ -127,17 +127,17 @@ final class PanelModel: ObservableObject {
         guard opening == nil, !card.isChatGPTHosted else { return }
         openNotice = nil
         guard let url = card.url else {
-            openNotice = "Ссылка на чат недоступна"; return
+            openNotice = "ссылка на чат недоступна"; return
         }
         guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier:AppIdentity.codex) else {
-            openNotice = "Приложение Codex не найдено"; return
+            openNotice = "приложение codex не найдено"; return
         }
         opening = card.id
         let config = NSWorkspace.OpenConfiguration(); config.activates = true; config.createsNewApplicationInstance = false
         NSWorkspace.shared.open([url],withApplicationAt:appURL,configuration:config) { [weak self] _,error in
             DispatchQueue.main.async {
                 self?.opening = nil
-                if error != nil { self?.openNotice = "Codex не смог открыть этот чат" }
+                if error != nil { self?.openNotice = "codex не смог открыть этот чат" }
             }
         }
     }
@@ -169,7 +169,7 @@ final class PanelModel: ObservableObject {
             updateLoginStatus()
         } catch {
             updateLoginStatus()
-            launchNotice = "Не удалось изменить автозапуск: \(error.localizedDescription)"
+            launchNotice = "не удалось изменить автозапуск: \(error.localizedDescription)"
         }
     }
     func updateLoginStatus() {
@@ -177,8 +177,8 @@ final class PanelModel: ObservableObject {
         launchEnabled = preferences.object(forKey:"autostartWanted") as? Bool ?? true
         launchNeedsApproval = launchEnabled && status == .requiresApproval
         switch status {
-        case .requiresApproval where launchEnabled: launchNotice = "Разрешите фоновую работу Codex Activity в настройках macOS"
-        case .notFound where launchEnabled: launchNotice = "Помощник автозапуска не найден"
+        case .requiresApproval where launchEnabled: launchNotice = "разрешите фоновую работу codex activity в настройках macos"
+        case .notFound where launchEnabled: launchNotice = "помощник автозапуска не найден"
         default: launchNotice = nil
         }
     }

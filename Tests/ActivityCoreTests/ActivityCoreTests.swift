@@ -381,7 +381,7 @@ final class ActivityCoreTests {
         let readyChat = cards.first { $0.threadID == ready }
         XCTAssertEqual(readyChat?.state, .completed)
         XCTAssertEqual(readyChat?.source, .chatGPT)
-        XCTAssertEqual(readyChat?.project, "Проект")
+        XCTAssertEqual(readyChat?.project, "проект")
         XCTAssertNil(readyChat?.turnCompletedAt)
         XCTAssertNil(readyChat?.url)
         let hostedWork = cards.filter { $0.source == .work && $0.isChatGPTHosted }
@@ -624,9 +624,9 @@ final class ActivityCoreTests {
         let sorted=ActivityPolicy.sorted([old,b,a],now:now)
         XCTAssertEqual(sorted.map(\.threadID),["old","b","a"])
         let before=ActivityListLayout(cards:sorted,now:now)
-        XCTAssertEqual(before.headers[0],"Ждёт вас · 1")
-        XCTAssertEqual(before.headers[1],"В работе · 1")
-        XCTAssertEqual(before.headers[2],"Готово · 1")
+        XCTAssertEqual(before.headers[0],"ждёт вас · 1")
+        XCTAssertEqual(before.headers[1],"в работе · 1")
+        XCTAssertEqual(before.headers[2],"готово · 1")
         let added=card("new",0,.running)
         let after=ActivityListLayout(cards:ActivityPolicy.sorted([added]+sorted,now:now),now:now)
         let anchored=after.restore(from:before,offset:before.positions[1]+10,viewport:80)

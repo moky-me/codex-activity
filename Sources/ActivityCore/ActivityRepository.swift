@@ -54,7 +54,7 @@ public final class ActivityRepository {
         }
         let runtime=execution.observe(threadIDs:runningIDs.union(recentIDs))
         var cards: [ActivityCard] = []
-        var notice = history == nil ? "История Codex недоступна. Состояния временно неизвестны." : nil
+        var notice = history == nil ? "история codex недоступна. состояния временно неизвестны." : nil
         var liveIDs = Set<String>()
         var waitingIDs = Set<RuntimeThreadKey>()
         func waitingStart(_ key:RuntimeThreadKey, _ state:ActivityState, reportedAt:Date? = nil) -> Date? {
@@ -130,7 +130,7 @@ public final class ActivityRepository {
                     tracked=fresh; questions[id]=fresh
                 } catch {
                     historyAvailable = false
-                    notice = "Формат истории изменился или база занята. Последние состояния могут быть недоступны."
+                    notice = "формат истории изменился или база занята. последние состояния могут быть недоступны."
                 }
             }
             let turnID = turn?["turn_id"]?.string
@@ -184,7 +184,7 @@ public final class ActivityRepository {
                     duration = milliseconds / 1000
                 }
             }
-            let name = Self.nonempty(row["name"]?.string) ?? Self.nonempty(row["title"]?.string) ?? "Без названия"
+            let name = Self.nonempty(row["name"]?.string) ?? Self.nonempty(row["title"]?.string) ?? "без названия"
             let project = Self.nonempty(row["project_name"]?.string) ?? Self.projectName(cwd: row["cwd"]?.string)
             let tokenBoundary: TokenUsageReader.Boundary?
             if let resolved {
@@ -194,7 +194,7 @@ public final class ActivityRepository {
             }
             let tokenUsage = tokenReader.usage(threadID: id, chat: row["tokens_used"]?.integer,
                 path: row["rollout_path"]?.string, boundary: tokenBoundary)
-            let question = resolved.map { $0.question ?? "Нужен ответ или разрешение" } ?? tracked.tracker.firstTitle
+            let question = resolved.map { $0.question ?? "нужен ответ или разрешение" } ?? tracked.tracker.firstTitle
             let source: ActivitySource = row["originator"]?.string == "codex_work_desktop" ? .work : .codex
             cards.append(ActivityCard(threadID:id, source:source, title:name, project:project,
                 summary:Self.summary(state:status, question:question, items:items), state:status,
@@ -218,7 +218,7 @@ public final class ActivityRepository {
                 WHERE h.host_kind IN ('ssh','wsl','remote-control') AND c.missing_candidate = 0
                 """)
         } catch {
-            let message = "Не удалось прочитать каталог удалённых чатов Codex."
+            let message = "не удалось прочитать каталог удалённых чатов codex."
             notice = notice.map { $0 + "\n" + message } ?? message
         }
         let remote = lastRemoteCatalog.compactMap { row -> (RuntimeThreadKey, [String: DBValue])? in
@@ -235,10 +235,10 @@ public final class ActivityRepository {
             let activity = max(catalogDate, live?.recency ?? .distantPast)
             guard ActivityPolicy.includes(updatedAt: activity, pending: status == .needsInput, now: now, period: period) else { continue }
             let summary = status == .unknown
-                ? "Удалённый чат · статус недоступен"
-                : Self.summary(state: status, question: live?.question ?? "Нужен ответ или разрешение", items: [])
+                ? "удалённый чат · статус недоступен"
+                : Self.summary(state: status, question: live?.question ?? "нужен ответ или разрешение", items: [])
             cards.append(ActivityCard(threadID: key.threadID, hostID: key.hostID,
-                title: row["display_title"]?.string ?? "Без названия",
+                title: row["display_title"]?.string ?? "без названия",
                 project: Self.projectName(cwd: row["cwd"]?.string), summary: summary, state: status,
                 updatedAt: activity, turnStartedAt: live?.startedAt,
                 turnCompletedAt: live?.completedAt, turnDuration: live?.duration,
@@ -248,7 +248,7 @@ public final class ActivityRepository {
             do {
                 cards += try ChatGPTCatalog.cards(in:catalog.get(),hostID:hostID,now:now,period:period)
             } catch {
-                let message = "Не удалось прочитать локальный каталог ChatGPT."
+                let message = "не удалось прочитать локальный каталог chatgpt."
                 notice = notice.map { $0 + "\n" + message } ?? message
             }
         }
@@ -268,27 +268,27 @@ public final class ActivityRepository {
         guard let value = text?.trimmingCharacters(in:.whitespacesAndNewlines), !value.isEmpty else { return nil }; return value
     }
     private static func projectName(cwd:String?) -> String {
-        guard let cwd, !cwd.isEmpty else { return "Без проекта" }
+        guard let cwd, !cwd.isEmpty else { return "без проекта" }
         let parts = URL(fileURLWithPath:cwd).pathComponents
-        if parts.contains("Codex"), parts.contains(where: { $0.range(of:"^\\d{4}-\\d{2}-\\d{2}$",options:.regularExpression) != nil }) { return "Без проекта" }
+        if parts.contains("Codex"), parts.contains(where: { $0.range(of:"^\\d{4}-\\d{2}-\\d{2}$",options:.regularExpression) != nil }) { return "без проекта" }
         return URL(fileURLWithPath:cwd).lastPathComponent
     }
     private static func summary(state:ActivityState,question:String?,items:[[String:Any]]) -> String {
-        if state == .needsInput { return ActivityPolicy.compact(question ?? "Нужно ваше разрешение") }
-        if state == .failed { return "Задача завершилась с ошибкой" }
-        if state == .paused { return "Работа прервана" }
-        if state == .unknown { return "Состояние пока недоступно" }
+        if state == .needsInput { return ActivityPolicy.compact(question ?? "нужно ваше разрешение") }
+        if state == .failed { return "задача завершилась с ошибкой" }
+        if state == .paused { return "работа прервана" }
+        if state == .unknown { return "состояние пока недоступно" }
         // Commentary is meant for people. Never expose tool arguments or terminal output.
         if let message = items.first(where: { ($0["type"] as? String) == "agentMessage" && !($0["text"] as? String ?? "").isEmpty }),
            let text = message["text"] as? String { return ActivityPolicy.compact(text) }
-        if state == .completed { return "Ответ готов" }
+        if state == .completed { return "ответ готов" }
         switch items.first?["type"] as? String {
-        case "commandExecution": return "Выполняет команду"
-        case "fileChange": return "Изменяет файлы"
-        case "webSearch": return "Ищет источники"
-        case "mcpToolCall": return "Работает с инструментом"
-        case "reasoning": return "Обдумывает задачу"
-        default: return "Работает над задачей"
+        case "commandExecution": return "выполняет команду"
+        case "fileChange": return "изменяет файлы"
+        case "webSearch": return "ищет источники"
+        case "mcpToolCall": return "работает с инструментом"
+        case "reasoning": return "обдумывает задачу"
+        default: return "работает над задачей"
         }
     }
 }

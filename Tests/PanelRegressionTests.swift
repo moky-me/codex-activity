@@ -360,7 +360,7 @@ private final class HeaderTestPanel: NSPanel {
         precondition(restoredItem.state == .off, "A new panel must restore the single-Space preference")
         precondition(NSApplication.shared.sendAction(restoredItem.action!, to: restoredItem.target, from: restoredItem))
         precondition(newPanel().allSpacesMenuItem().state == .on, "Turning on all Spaces must also persist")
-        precondition(ActivityState.unknown.label == "Нет статуса",
+        precondition(ActivityState.unknown.label == "нет статуса",
                      "All representations must use the same unknown-status label")
         precondition([ActivityState.failed,.paused,.unknown].allSatisfy {
             PanelPalette.statusStripe($0.group,.dark) == PanelPalette.muted(.dark).opacity(0.45)
@@ -406,7 +406,7 @@ private final class HeaderTestPanel: NSPanel {
                          "A hosted card must not attempt navigation or change notices")
         }
         model.open(ActivityCard(threadID:"invalid",title:"Test",project:"Test",summary:"Test",state:.unknown,updatedAt:.now))
-        precondition(model.noticeDetails == "Данные недоступны\n\nРазрешите автозапуск\n\nСсылка на чат недоступна",
+        precondition(model.noticeDetails == "Данные недоступны\n\nРазрешите автозапуск\n\nссылка на чат недоступна",
                      "A navigation error must preserve both existing notices")
         precondition(model.launchEnabled, "Autostart must default to on")
         await model.configureLoginItem(enable:true)

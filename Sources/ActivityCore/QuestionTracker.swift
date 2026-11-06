@@ -49,7 +49,7 @@ public struct QuestionTracker: Equatable, Sendable {
                 for (index,question) in list.enumerated() {
                     let key="\(id):\(index)"
                     if !answered.contains(key) {
-                        questions[key] = Question(title:(question["title"] as? String) ?? "Нужен ваш ответ",
+                        questions[key] = Question(title:(question["title"] as? String) ?? "нужен ваш ответ",
                                                   askedAt:questions[key]?.askedAt ?? date,
                                                   progress:questions[key]?.progress ?? .waiting)
                     }
