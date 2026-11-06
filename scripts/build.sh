@@ -11,7 +11,11 @@ esac
 panel_id=io.github.moky-me.CodexActivity
 helper_id="$panel_id.Launcher"
 build_dir="$PWD/build"
-app="$build_dir/Codex Activity Community.app"
+output="$build_dir/Codex Activity Community.app"
+mkdir -p "$build_dir"
+stage=$(mktemp -d "${TMPDIR:-/tmp}/codex-activity-build.XXXXXX")
+trap 'rm -rf "$stage"' EXIT
+app="$stage/Codex Activity Community.app"
 helper="$app/Contents/Library/LoginItems/ActivityLauncher.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$helper/Contents/MacOS"
 
@@ -63,11 +67,19 @@ for path, identifier, name, executable in (
     (pathlib.Path(path) / "Contents/Info.plist").write_bytes(plistlib.dumps(info))
 PY
 
-swift scripts/icon.swift "$build_dir"
-iconutil -c icns "$build_dir/Activity.iconset" -o "$app/Contents/Resources/Activity.icns"
+swift scripts/icon.swift "$stage"
+iconutil -c icns "$stage/Activity.iconset" -o "$app/Contents/Resources/Activity.icns"
 # File Provider can attach FinderInfo. Only this packaging metadata is removed.
 xattr -dr com.apple.FinderInfo "$app" 2>/dev/null || true
 codesign --force --sign - --identifier "$helper_id" -r="designated => identifier \"$helper_id\"" "$helper"
 codesign --force --sign - --identifier "$panel_id" -r="designated => identifier \"$panel_id\"" "$app"
 codesign --verify --deep --strict "$app"
-printf 'Built: %s\n' "$app"
+# Replace the generated bundle as a unit. Keep the previous output if publication fails.
+previous="$stage/previous.app"
+if [[ -e "$output" ]]; then mv "$output" "$previous"; fi
+if ! mv "$app" "$output" || ! codesign --verify --deep --strict "$output"; then
+    if [[ -e "$output" ]]; then mv "$output" "$stage/rejected.app"; fi
+    if [[ -e "$previous" ]]; then mv "$previous" "$output"; fi
+    exit 1
+fi
+printf 'Built: %s\n' "$output"
