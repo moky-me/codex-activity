@@ -1,0 +1,35 @@
+name: macOS tests and package
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Core and panel regressions
+        run: |
+          swift run ActivityCoreTests
+          ./scripts/test-panel.sh
+      - name: Package and verify the universal app
+        run: ./scripts/package.sh
+      - name: Save the verified package
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: codex-activity-macos
+          path: |
+            build/release/*.zip
+            build/release/SHA256SUMS.txt
+          if-no-files-found: error
+          compression-level: 0

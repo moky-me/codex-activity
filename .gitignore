@@ -1,0 +1,11 @@
+.build/
+.swiftpm/
+.DS_Store
+build/
+
+# Local output and rollback material
+outputs/
+*.zip
+*.tar.gz
+*.sqlite*
+*.plist.local
