@@ -7,13 +7,17 @@ public struct LocalExecution: Equatable, Sendable {
     public let status: ExecutionStatus
     fileprivate var activeFlags: [String] = []
     fileprivate var requests: [BlockingRequest?] = []
+    fileprivate var blockingStatusKnown = false
     fileprivate var snapshot: RemoteActivity?
 
     public init(status: ExecutionStatus) { self.status = status }
 
-    func waits(for turnID: String) -> Bool {
-        status == .active && (hasWaitingFlag(activeFlags)
-            || requests.contains { $0?.applies(to:turnID) == true })
+    func blockingWait(for turnID: String) -> Bool? {
+        guard status == .active else { return nil }
+        if hasWaitingFlag(activeFlags) || requests.contains(where: { $0?.applies(to:turnID) == true }) {
+            return true
+        }
+        return blockingStatusKnown && currentActivity?.turnID == turnID ? false : nil
     }
 
     var currentActivity: RemoteActivity? {
@@ -86,6 +90,7 @@ public struct RuntimeProjection {
         var activity: RemoteActivity?
         var activeFlags: [String] = []
         var requests: [BlockingRequest?] = []
+        var blockingStatusKnown = false
     }
     private var entries: [RuntimeThreadKey: Entry] = [:]
 
@@ -101,6 +106,7 @@ public struct RuntimeProjection {
             var execution = LocalExecution(status:status)
             execution.activeFlags = entry.activeFlags
             execution.requests = entry.requests
+            execution.blockingStatusKnown = entry.blockingStatusKnown
             execution.snapshot = entry.activity
             result[key.threadID] = execution
         }
@@ -144,6 +150,8 @@ public struct RuntimeProjection {
             if host == "local" {
                 entry.activeFlags = runtime?["activeFlags"] as? [String] ?? []
                 entry.requests = (state["requests"] as? [Any] ?? []).map(BlockingRequest.init)
+                entry.blockingStatusKnown = state["requests"] is [Any]
+                    && (runtime?["activeFlags"] == nil || runtime?["activeFlags"] is [String])
             }
             entries[key] = entry
             onSnapshot(key)
@@ -165,28 +173,38 @@ public struct RuntimeProjection {
                 entry.activity?.applyTokenUsagePatch(patch, path:path)
                 continue
             }
-            needsSnapshot = needsSnapshot || Self.affectsActivitySnapshot(root:root,path:path,patch:patch)
+            needsSnapshot = needsSnapshot || Self.affectsActivitySnapshot(
+                root:root, path:path, patch:patch,
+                awaitsContinuation:entry.activity?.questions.awaitsContinuation == true)
             guard host == "local" else { continue }
             if root == "threadRuntimeStatus" {
                 if path.count == 1 {
                     let runtime = patch["value"] as? [String: Any]
                     entry.status = (runtime?["type"] as? String).flatMap(ExecutionStatus.init(rawValue:))
                     entry.activeFlags = runtime?["activeFlags"] as? [String] ?? []
+                    if runtime?["activeFlags"] != nil && !(runtime?["activeFlags"] is [String]) {
+                        entry.blockingStatusKnown = false
+                    }
                 } else if path.count == 2, path[1] as? String == "type" {
                     entry.status = (patch["value"] as? String).flatMap(ExecutionStatus.init(rawValue:))
                     if entry.status != .active { entry.activeFlags = [] }
                 } else if path[1] as? String == "activeFlags" {
                     if path.count == 2 {
                         entry.activeFlags = patch["value"] as? [String] ?? []
+                        if patch["op"] as? String != "remove", !(patch["value"] is [String]) {
+                            entry.blockingStatusKnown = false
+                        }
                     } else if !Self.applyArrayPatch(patch,path:path,indexAt:2,to:&entry.activeFlags,
                                                     decode:{ $0 as? String ?? "" }) {
                         entry.activeFlags = []
+                        entry.blockingStatusKnown = false
                         needsSnapshot = true
                     }
                 }
             } else if root == "requests" {
                 if path.count == 1 {
                     entry.requests = (patch["value"] as? [Any] ?? []).map(BlockingRequest.init)
+                    if !(patch["value"] is [Any]) { entry.blockingStatusKnown = false }
                 } else if !Self.applyArrayPatch(patch,path:path,indexAt:1,to:&entry.requests,
                                                 decode:BlockingRequest.init) {
                     // A field-level change can alter whether the request blocks.
@@ -195,6 +213,7 @@ public struct RuntimeProjection {
                     } else {
                         entry.requests = []
                     }
+                    entry.blockingStatusKnown = false
                     needsSnapshot = true
                 }
             }
@@ -220,7 +239,8 @@ public struct RuntimeProjection {
         return true
     }
 
-    private static func affectsActivitySnapshot(root: String, path: [Any], patch: [String: Any]) -> Bool {
+    private static func affectsActivitySnapshot(root: String, path: [Any], patch: [String: Any],
+                                                awaitsContinuation: Bool) -> Bool {
         if root == "threadRuntimeStatus" || root == "requests" { return true }
         let fieldIndex: Int
         switch root {
@@ -244,9 +264,11 @@ public struct RuntimeProjection {
                 let type = item?["type"] as? String
                 return type == "userMessage" || type == "steeringUserMessage"
                     || (item?["questions"] as? [[String: Any]])?.isEmpty == false
+                    || (awaitsContinuation && item.map(QuestionTracker.isContinuationCommentary) == true)
             }
             let field = path[fieldIndex + 2] as? String
             return field == "questions" || (field == "status" && patch["value"] as? String == "accepted")
+                || (awaitsContinuation && field == "text" && QuestionTracker.hasText(patch["value"]))
         default: return false
         }
     }

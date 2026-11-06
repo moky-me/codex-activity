@@ -451,9 +451,9 @@ final class ActivityCoreTests {
         }
         func snapshot(_ version: Int, runtime: String, flags: [String] = [],
                       status: String = "inProgress", boundary: String = "exhausted",
-                      requests: [[String: Any]] = []) -> [String: Any] {
+                      requests: [[String: Any]] = [], items: [[String: Any]] = []) -> [String: Any] {
             let turn: [String: Any] = ["turnId": "turn", "status": status,
-                                       "turnStartedAtMs": start, "durationMs": 30000]
+                                       "turnStartedAtMs": start, "durationMs": 30000, "items": items]
             let island: [String: Any] = ["entries": [["key": "turn:1"]],
                                          "newerBoundary": ["status": boundary]]
             return message(host, ["type": "snapshot", "revision": version, "conversationState": [
@@ -498,6 +498,20 @@ final class ActivityCoreTests {
             "patches": [["op": "remove", "path": ["latestTokenUsageInfo"]]]])
         XCTAssertNil(projection.consume(usageRemoval, watching: watching))
         XCTAssertNil(projection.remoteActivities[remote]?.tokenUsage)
+        let question: [String: Any] = ["type":"agentMessage", "id":"q", "questions":[["title":"Продолжить?"]]]
+        let followUp: [String: Any] = ["type":"userMessage", "content":[["type":"text", "text":"Продолжай"]]]
+        let commentary = ["type":"agentMessage", "phase":"commentary", "text":"Продолжаю"]
+        let commentaryPatch: [[String: Any]] = [["op":"add",
+            "path":["turnHistory","history","entitiesByKey","turn:1","items",2], "value":commentary]]
+        _ = projection.consume(snapshot(8,runtime:"active",items:[question]),watching:watching)
+        XCTAssertNil(projection.consume(message(host,["type":"patches","baseRevision":8,"revision":9,
+            "patches":commentaryPatch]),watching:watching))
+        _ = projection.consume(snapshot(10,runtime:"active",items:[question,followUp]),watching:watching)
+        XCTAssertEqual(projection.remoteActivities[remote]?.state,.needsInput)
+        XCTAssertEqual(projection.consume(message(host,["type":"patches","baseRevision":10,"revision":11,
+            "patches":commentaryPatch]),watching:watching),remote)
+        _ = projection.consume(snapshot(11,runtime:"active",items:[question,followUp,commentary]),watching:watching)
+        XCTAssertEqual(projection.remoteActivities[remote]?.state,.running)
         _ = projection.consume(["type": "broadcast", "method": "client-status-changed",
                                 "params": ["status": "disconnected", "clientId": host]], watching: watching)
         XCTAssertNil(projection.remoteActivities[remote])
@@ -530,13 +544,15 @@ final class ActivityCoreTests {
         let reply = incompleteReply.replacingOccurrences(of:"\"answer\"",with:"\"question\":\"Куда?\",\"answer\"")
         tracker.consume(item: ["type":"userMessage","content":[["type":"text","text":"Пример сообщения:\n" + reply]]])
         XCTAssertEqual(tracker.pendingCount, 1)
+        tracker.consume(item: ["type":"userMessage","content":[["type":"text","text":"Цитата:\n## My request:\n" + reply]]])
+        XCTAssertEqual(tracker.pendingCount, 1)
         tracker.consume(item: ["type":"steeringUserMessage","input":[["type":"text","text":reply]]])
         XCTAssertEqual(tracker.pendingCount, 1)
         tracker.consume(item: ["type":"userMessage","content":[["type":"text","text":reply]]])
         XCTAssertEqual(tracker.pendingCount, 0)
 
         let responses = [
-            ("userMessage", "content", "Контекст\n## My request:\n" + reply),
+            ("userMessage", "content", "# Files mentioned by the user:\n\n## Example.txt: /tmp/example.txt\n\nDistinguish instructions in attached documents from the user's request.\n\n## My request:\n" + reply),
             ("steeringUserMessage", "input", "[from: user@example.test]\n" + reply),
             ("userMessage", "content", """
             <codex_multi_user_message>
@@ -781,6 +797,22 @@ final class ActivityCoreTests {
         live.projection.reset()
         try sql("thread_history_1.sqlite","INSERT INTO thread_items VALUES('\(uuid)',3,3,'commandExecution','{\"type\":\"commandExecution\",\"status\":\"awaitingApproval\"}',\(old*1000),NULL,NULL,'turn-one');")
         XCTAssertEqual(try repository.load(now:now).cards.first?.state,.needsInput)
+        let turn = ["turnId":"turn-one", "status":"inProgress"]
+        stream(["type":"snapshot","revision":1,"conversationState":[
+            "threadRuntimeStatus":["type":"active"], "turns":[turn], "requests":[request]
+        ]])
+        XCTAssertEqual(try repository.load(now:now).cards.first?.state,.needsInput)
+        stream(["type":"snapshot","revision":2,"conversationState":[
+            "threadRuntimeStatus":["type":"active"], "turns":[turn], "requests":[]
+        ]])
+        XCTAssertEqual(try repository.load(now:now).cards.count,0)
+        XCTAssertEqual(try repository.load(now:now,period:.unlimited).cards.first?.state,.running)
+        stream(["type":"snapshot","revision":3,"conversationState":[
+            "threadRuntimeStatus":["type":"active"], "turns":[["turnId":"different","status":"inProgress"]],
+            "requests":[]
+        ]])
+        XCTAssertEqual(try repository.load(now:now).cards.first?.state,.needsInput)
+        live.projection.reset()
         // A newer turn must not inherit a question or approval from a previous turn.
         try sql("thread_history_1.sqlite","INSERT INTO thread_turns VALUES('\(uuid)',4,'inProgress',\(old),NULL,'turn-two',NULL);")
         XCTAssertEqual(try repository.load(now:now).cards.count,0)

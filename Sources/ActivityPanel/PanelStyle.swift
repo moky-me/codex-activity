@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import ActivityCore
 
@@ -75,5 +76,46 @@ enum PanelPalette {
         case .failed: return color(0x6e1615,0xffd9d9,scheme) // red-800 / red-50
         default: return muted(scheme)
         }
+    }
+}
+
+let metadataIconGap: CGFloat = 4
+
+struct HoverArea: NSViewRepresentable {
+    let changed: (Bool) -> Void
+
+    final class TrackingView: NSView {
+        var changed: ((Bool) -> Void)?
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func mouseEntered(with event: NSEvent) { changed?(true) }
+        override func mouseExited(with event: NSEvent) { changed?(false) }
+    }
+
+    func makeNSView(context: Context) -> TrackingView {
+        let view = TrackingView()
+        view.addTrackingArea(NSTrackingArea(rect:.zero,
+            options:[.mouseEnteredAndExited,.activeAlways,.inVisibleRect],owner:view,userInfo:nil))
+        return view
+    }
+
+    func updateNSView(_ view: TrackingView, context: Context) {
+        view.changed = changed
+    }
+}
+
+struct HoverFill: View {
+    let active: Bool
+    var pressed = false
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        RoundedRectangle(cornerRadius:5,style:.continuous)
+            .fill(pressed ? PanelPalette.controlPressed(scheme) : PanelPalette.controlHover(scheme))
+            .opacity(active ? 1 : 0)
+            .animation(PanelMotion.feedback.animation(reduceMotion:reduceMotion),value:active)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
