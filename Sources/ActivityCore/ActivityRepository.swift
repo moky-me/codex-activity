@@ -75,7 +75,7 @@ public final class ActivityRepository {
             var historyAvailable = history != nil
             let live = runtime[id]
             let executionStatus = live?.status
-            var liveWaiting = false
+            var liveWaiting: Bool?
             if let history {
                 do {
                     turn = try history.query("""
@@ -88,7 +88,7 @@ public final class ActivityRepository {
                     // are actionable only while their turn is inProgress. Completion,
                     // interruption and a new turn all end that request's lifetime.
                     if turn?["status"]?.string == "inProgress", executionStatus == .active, let turnID=turn?["turn_id"]?.string {
-                        liveWaiting = runtime[id]?.waits(for:turnID) == true
+                        liveWaiting = live?.blockingWait(for:turnID)
                         let updates = try history.query("""
                             SELECT item_type,created_at_ms,item_json FROM thread_items WHERE thread_id=? AND turn_id=?
                               AND item_type IN ('agentMessage','userMessage','steeringUserMessage')
@@ -107,17 +107,19 @@ public final class ActivityRepository {
                             fresh.tracker.consume(item:json, at:timestamp)
                         }
                         // Approval remains visible regardless of the selected period.
-                        fresh.approvalStatus = try history.query("""
-                            SELECT json_extract(item_json,'$.status') AS status FROM thread_items
-                            WHERE thread_id=? AND turn_id=? AND json_valid(item_json)
-                              AND json_extract(item_json,'$.status') IN ('awaitingApproval','waitingForApproval','awaitingUserInput','requiresApproval')
-                            ORDER BY rollout_ordinal DESC LIMIT 1
-                            """, [.text(id),.text(turnID)]).first?["status"]?.string
+                        if liveWaiting == nil {
+                            fresh.approvalStatus = try history.query("""
+                                SELECT json_extract(item_json,'$.status') AS status FROM thread_items
+                                WHERE thread_id=? AND turn_id=? AND json_valid(item_json)
+                                  AND json_extract(item_json,'$.status') IN ('awaitingApproval','waitingForApproval','awaitingUserInput','requiresApproval')
+                                ORDER BY rollout_ordinal DESC LIMIT 1
+                                """, [.text(id),.text(turnID)]).first?["status"]?.string
+                        }
                     }
                     activity = max(activity, turn?["started_at"]?.number ?? 0, turn?["completed_at"]?.number ?? 0)
                     let latest=try history.query("SELECT created_at_ms,started_at_ms,completed_at_ms FROM thread_items WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 1",[.text(id)]).first
                     activity=max(activity,(latest?["created_at_ms"]?.number ?? 0)/1000,(latest?["started_at_ms"]?.number ?? 0)/1000,(latest?["completed_at_ms"]?.number ?? 0)/1000)
-                    if ActivityPolicy.includes(updatedAt: Date(timeIntervalSince1970: activity), pending: liveWaiting || fresh.tracker.pendingCount > 0 || fresh.approvalStatus != nil, now: now, period: period) {
+                    if ActivityPolicy.includes(updatedAt: Date(timeIntervalSince1970: activity), pending: liveWaiting == true || fresh.tracker.pendingCount > 0 || fresh.approvalStatus != nil, now: now, period: period) {
                         let recent = try history.query("SELECT item_json,created_at_ms,started_at_ms,completed_at_ms FROM thread_items WHERE thread_id=? ORDER BY rollout_ordinal DESC LIMIT 16", [.text(id)])
                         items = recent.compactMap { Self.decode($0["item_json"]?.string) }
                         for item in recent {
@@ -144,8 +146,8 @@ public final class ActivityRepository {
                 tracked.tracker.merge(sameTurn.questions)
             }
             let pending = executionStatus == .active ? tracked.tracker.pendingCount : 0
-            let itemStatus = executionStatus == .active ? tracked.approvalStatus : nil
-            let needsInput = liveWaiting || pending > 0
+            let itemStatus = executionStatus == .active && liveWaiting == nil ? tracked.approvalStatus : nil
+            let needsInput = liveWaiting == true || pending > 0
             if let remembered = lastLiveTurns[id], historyAvailable,
                !remembered.isAheadOfIndex(turnID:turnID,turnStatus:turnStatus,startedAt:turnStart) {
                 lastLiveTurns[id] = nil

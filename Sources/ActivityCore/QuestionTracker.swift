@@ -19,6 +19,7 @@ public struct QuestionTracker: Equatable, Sendable {
     private var answered: Set<String> = []
     public init() {}
     private var waiting: [String:Question] { questions.filter { $0.value.progress != .resumed } }
+    var awaitsContinuation: Bool { questions.values.contains { $0.progress == .followedUp } }
     public var pendingCount:Int { waiting.count }
     public var firstTitle:String? { waiting.sorted { $0.key < $1.key }.first?.value.title }
     public var oldestQuestionAt:Date? { waiting.values.compactMap(\.askedAt).min() }
@@ -38,8 +39,7 @@ public struct QuestionTracker: Equatable, Sendable {
     public mutating func consume(item:[String:Any], at date:Date? = nil) {
         let type = item["type"] as? String
         if type == "agentMessage" {
-            if item["phase"] as? String == "commentary",
-               let text = item["text"] as? String, !text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {
+            if Self.isContinuationCommentary(item) {
                 // A later commentary confirms that work continued after the user followed up.
                 for key in questions.keys where questions[key]?.progress == .followedUp {
                     questions[key]?.progress = .resumed
@@ -90,11 +90,23 @@ public struct QuestionTracker: Equatable, Sendable {
         }
     }
 
+    static func isContinuationCommentary(_ item: [String: Any]) -> Bool {
+        item["type"] as? String == "agentMessage" && item["phase"] as? String == "commentary"
+            && hasText(item["text"])
+    }
+
+    static func hasText(_ value: Any?) -> Bool {
+        (value as? String)?.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty == false
+    }
+
     private static func replyBody(_ text: String, openingTag: String) -> String {
-        // Codex may prefix the current input with context or wrap it for a shared chat.
-        let delimiter = text.range(of:"\n## My request:\n",options:.backwards)
-        let message = (delimiter.map { String(text[$0.upperBound...]) } ?? text)
-            .trimmingCharacters(in:.whitespacesAndNewlines)
+        // The heading alone is also ordinary Markdown. Only unwrap a known attachment envelope.
+        var message = text.trimmingCharacters(in:.whitespacesAndNewlines)
+        if message.hasPrefix("# Files mentioned by the user:\n") || message.hasPrefix("# Files pasted by the user:\n"),
+           let delimiter = message.range(of:"\n## My request:\n"),
+           message[..<delimiter.lowerBound].range(of:#"(?m)^(?:##|- )\s*.+: /[^\r\n]+$"#,options:.regularExpression) != nil {
+            message = message[delimiter.upperBound...].trimmingCharacters(in:.whitespacesAndNewlines)
+        }
         if message.hasPrefix(openingTag) { return message }
         if let sender = message.range(of:#"^\[from: [^\]\r\n]+\](?:\r?\n|$)"#,options:.regularExpression) {
             return message[sender.upperBound...].trimmingCharacters(in:.whitespacesAndNewlines)
