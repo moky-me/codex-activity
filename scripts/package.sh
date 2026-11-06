@@ -7,7 +7,7 @@ version=$(python3 -c 'import json; print(json.load(open("version.json"))["versio
 archive="Codex-Activity-Community-${version}-universal.zip"
 app="Codex Activity Community.app"
 out="$PWD/build/release"
-stage=$(mktemp -d "$PWD/build/.release.XXXXXX")
+stage=$(mktemp -d "${TMPDIR:-/tmp}/codex-activity-release.XXXXXX")
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$out" "$stage/unpacked"
 

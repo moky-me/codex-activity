@@ -24,8 +24,8 @@ struct PanelView: View {
         return VStack(spacing:0) {
             ZStack(alignment:.topTrailing) {
                 VStack(alignment:.leading,spacing:3) {
-                    HStack(spacing:4) {
-                        Text("codex").foregroundStyle(PanelPalette.ink(scheme)).font(.system(size:14,weight:.semibold))
+                    HStack(spacing:2) {
+                        Text("панелька").foregroundStyle(PanelPalette.ink(scheme)).font(.system(size:14,weight:.semibold))
                             .accessibilityAddTraits(.isHeader)
                         headerDot
                     }.frame(height:menuSize.height)
