@@ -1,3 +1,4 @@
+import ActivityPanelStyle
 import AppKit
 import SwiftUI
 import ActivityCore
@@ -15,6 +16,7 @@ struct CardView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
+    @FocusState private var keyboardFocused: Bool
     @State private var hover = false
     @State private var durationHovered = false
     @State private var tokensHovered = false
@@ -31,6 +33,7 @@ struct CardView: View {
         statusProgress < 1 ? previousStatus?.state ?? card.state : card.state
     }
     private var status: String { card.state.label }
+    private var showsOpenCue: Bool { card.url != nil && (hover || keyboardFocused) }
     private var sourceLabel: String {
         card.source == .work && card.isChatGPTHosted ? "облачный work" : card.source.label
     }
@@ -79,6 +82,7 @@ struct CardView: View {
             if canOpen {
                 Button(action:action) { surface(tokenValues:tokenValues) }
                     .buttonStyle(.plain)
+                    .focused($keyboardFocused)
                     .accessibilityHint(Self.openHint)
             } else {
                 surface(tokenValues:tokenValues)
@@ -87,7 +91,7 @@ struct CardView: View {
             }
         }
         .onHover { value in
-            withAnimation(PanelMotion.feedback.animation(reduceMotion:reduceMotion)) { hover=value && canOpen }
+            hover = value && canOpen
             if !value { durationHovered=false; tokensHovered=false }
         }
         .help([title, "\(sourceLabel) · \(project) · \(status)", details, tokens, summary, canOpen ? Self.openHint : ""]
@@ -129,10 +133,7 @@ struct CardView: View {
         VStack(alignment:.leading,spacing:0) {
             VStack(alignment:.leading,spacing:7) {
                 VStack(alignment:.leading,spacing:4) {
-                    Text(title).font(.system(size:11.5,weight:.semibold))
-                        .foregroundStyle(PanelPalette.ink(scheme)).lineLimit(2)
-                        .fixedSize(horizontal:false,vertical:true)
-                        .frame(maxWidth:.infinity,alignment:.leading)
+                    titleRow
                     HStack(spacing:5) {
                         Text(card.source.badge)
                             .font(.system(size:9,weight:.semibold))
@@ -169,8 +170,9 @@ struct CardView: View {
             .background {
                 shape.fill(PanelPalette.card(scheme))
                     .overlay {
-                        shape.fill(PanelPalette.cardHover(settledState.group,scheme))
-                            .opacity(hover ? 1 : 0)
+                        shape.fill(PanelPalette.cardHover(scheme))
+                            .opacity(showsOpenCue ? 1 : 0)
+                            .animation(PanelMotion.feedback.animation(reduceMotion:reduceMotion),value:showsOpenCue)
                     }
             }
             .overlay {
@@ -184,6 +186,25 @@ struct CardView: View {
             }
             .overlay(alignment:.bottomLeading) { hoverPreview }
             .contentShape(shape)
+    }
+
+    private var titleRow: some View {
+        HStack(alignment:.top,spacing:3) {
+            Text(title).font(.system(size:11.5,weight:.medium))
+                .foregroundStyle(PanelPalette.ink(scheme)).lineLimit(2)
+                .fixedSize(horizontal:false,vertical:true)
+                .frame(maxWidth:.infinity,alignment:.leading)
+            if card.url != nil {
+                Image(systemName:"arrow.up.right")
+                    .font(.system(size:9,weight:.medium))
+                    .foregroundStyle(PanelPalette.ink(scheme))
+                    .frame(width:11,height:14)
+                    .opacity(showsOpenCue ? 1 : 0)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: showsOpenCue ? 0.26 : 0.16), value: showsOpenCue)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
     }
 
     @ViewBuilder private var hoverPreview: some View {
@@ -237,13 +258,19 @@ struct CardView: View {
         let statusColor = PanelPalette.statusText(card.state,scheme)
         switch card.state {
         case .running:
-            ViewThatFits(in:.horizontal) {
-                if let seconds = elapsed(for:card) {
+            if let seconds = elapsed(for:card) {
+                ViewThatFits(in:.horizontal) {
                     Text("\(runningCaption) \(Self.compactDuration(seconds))").fixedSize()
                     Text("\(runningCaption) \(Self.shortRunningDuration(seconds))").fixedSize()
+                    HStack(spacing:3) {
+                        Text(runningCaption).lineLimit(1)
+                        Text(Self.tightRunningDuration(seconds)).fixedSize()
+                    }
                 }
-                Text(runningCaption).lineLimit(1)
-            }.foregroundStyle(statusColor)
+                .foregroundStyle(statusColor)
+            } else {
+                Text(runningCaption).lineLimit(1).foregroundStyle(statusColor)
+            }
         case .completed:
             if card.turnDuration != nil || card.turnCompletedAt != nil {
                 ViewThatFits(in:.horizontal) {
@@ -316,6 +343,13 @@ struct CardView: View {
         let unit: TimeInterval = seconds >= 86_400 ? 86_400 : 3_600
         let shortened = seconds < unit ? seconds : (seconds / unit).rounded(.down) * unit
         return compactDuration(shortened)
+    }
+
+    static func tightRunningDuration(_ seconds: TimeInterval) -> String {
+        shortRunningDuration(seconds)
+            .replacingOccurrences(of:" мин",with:"м")
+            .replacingOccurrences(of:" ч",with:"ч")
+            .replacingOccurrences(of:" д",with:"д")
     }
 
     static func completionLabel(_ date: Date, short: Bool = false, now: Date = Date(),

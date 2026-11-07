@@ -27,13 +27,17 @@ final class PanelModel: ObservableObject {
     private let loginService: LoginService
     private let preferences: UserDefaults
     private var runningCaptions: RunningCaptions
-    init(loginService: LoginService = NativeLoginService(), preferences: UserDefaults = .standard) {
+    init(loginService: LoginService = NativeLoginService(), preferences: UserDefaults = .standard,
+         repository: ActivityRepository = ActivityRepository()) {
         self.loginService = loginService; self.preferences = preferences
+        self.repository = repository
         runningCaptions = preferences.data(forKey:Self.captionsKey)
             .flatMap { try? JSONDecoder().decode(RunningCaptions.self,from:$0) } ?? RunningCaptions()
         launchEnabled = preferences.object(forKey:"autostartWanted") as? Bool ?? true
         showsTokens = preferences.object(forKey:"showsTokens") as? Bool ?? true
         showsCloudChats = preferences.object(forKey:"showsCloudChats") as? Bool ?? true
+        period = ActivityPeriod(savedHours:preferences.object(forKey:"trackingHours") as? Int)
+        preferences.removeObject(forKey:"widthMM")
     }
     @Published var cards: [ActivityCard] = [] {
         didSet {
@@ -53,9 +57,9 @@ final class PanelModel: ObservableObject {
     @Published private(set) var launchChanging = false
     @Published private(set) var launchNeedsApproval = false
     @Published var opening: String?
-    @Published private(set) var period = ActivityPeriod(savedHours:UserDefaults.standard.object(forKey:"trackingHours") as? Int)
+    @Published private(set) var period: ActivityPeriod
     let widthMM = 30.0
-    private let repository = ActivityRepository()
+    private let repository: ActivityRepository
     private let queue = DispatchQueue(label:"io.github.moky-me.CodexActivity.reader",qos:.utility)
     private var busy = false
     private var timer: Timer?
@@ -76,14 +80,15 @@ final class PanelModel: ObservableObject {
     }
 
     func start() {
-        UserDefaults.standard.removeObject(forKey:"widthMM")
         refresh(force:true)
-        timer = Timer.scheduledTimer(withTimeInterval:3,repeats:true) { [weak self] _ in self?.refresh() }
+        timer = Timer.scheduledTimer(withTimeInterval:3,repeats:true) { [weak self] _ in
+            self?.refresh()
+        }
         timer?.tolerance = 1
     }
     func refresh(force:Bool = false) {
         guard !busy else { return }
-        let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
+        let root = repository.root
         let files = ["state_5.sqlite","state_5.sqlite-wal","thread_history_1.sqlite","thread_history_1.sqlite-wal","sqlite/codex.db","sqlite/codex.db-wal",".codex-global-state.json"]
         let runtimeRevision = repository.runtimeRevision
         let stamp = files.map { file -> String in
@@ -117,7 +122,20 @@ final class PanelModel: ObservableObject {
                     self.fingerprint = stamp; self.lastRead = snapshot.observedAt
                     self.cards = snapshot.cards; self.notice = snapshot.notice
                 case .failure:
-                    self.cards.removeAll(where:\.isChatGPTHosted)
+                    let retained = self.cards.compactMap { card -> ActivityCard? in
+                        guard !card.isChatGPTHosted else { return nil }
+                        guard card.state == .running else { return card }
+                        return ActivityCard(
+                            threadID:card.threadID, hostID:card.hostID, source:card.source,
+                            title:card.title, project:card.project, summary:"источник данных недоступен",
+                            state:.unknown, updatedAt:card.updatedAt,
+                            turnStartedAt:card.turnStartedAt, turnCompletedAt:card.turnCompletedAt,
+                            turnDuration:card.turnDuration, pendingCount:card.pendingCount,
+                            waitingSince:card.waitingSince, tokenUsage:card.tokenUsage, turnID:card.turnID
+                        )
+                    }
+                    self.cards = ActivityPolicy.sorted(retained,now:Date())
+                    self.fingerprint = ""
                     self.notice = self.cards.isEmpty ? "не удалось прочитать данные codex." : "не удалось прочитать данные codex. показаны последние известные состояния."
                 }
             }
@@ -144,7 +162,7 @@ final class PanelModel: ObservableObject {
     func setPeriod(_ value:ActivityPeriod) {
         guard period != value else { return }
         period = value
-        UserDefaults.standard.set(value.rawValue,forKey:"trackingHours")
+        preferences.set(value.rawValue,forKey:"trackingHours")
         refresh(force:true)
     }
 
@@ -185,24 +203,31 @@ final class PanelModel: ObservableObject {
 }
 
 private struct RunningCaptions: Codable {
+    // Shuffled once, with different initials on adjacent words in the cycle.
     private static let verbs = [
-        "Возится", "Ладит", "Исполняет", "Изгаляется", "Кипишует",
-        "Суетится", "Креативит", "Шуршит", "Зиждет", "Химичит",
-        "Шаманит", "Созидает", "Осуществляет", "Превозмогает", "Трудится",
-        "Куражится", "Имитирует", "Кочегарит", "Куралесит", "Халтурит",
-        "Мозгует", "Шурует", "Изощряется", "Соображает", "Барахтается",
-        "Производит", "Тарахтит", "Ерзает", "Утомляется", "Шкодит",
-        "Хитрит", "Пыхтит", "Претворяет", "Хлопочет", "Пытается",
-        "Ковыряется", "Пыхтюкает", "Буксует", "Чудит", "Импровизирует",
-        "Содевает", "Пашет", "Мастерит", "Шебуршит", "Воплощает",
-        "Кипит", "Балагурит", "Городит", "Изобретает", "Пилит",
-        "Напрягается", "Тужится", "Свершает", "Потеет", "Вершит",
-        "Симулирует", "Крутится", "Колдует", "Надрывается", "Копошится",
-        "Сооружает", "Стряпает", "Колупает", "Мается", "Кочевряжится",
-        "Ухищряется", "Старается", "Творит", "Пробует", "Пыжится",
-        "Кумекает", "Филонит", "Изготавливает", "Ваяет", "Создаёт",
-        "Мудрит", "Кряхтит", "Ворожит", "Корпит", "Усердствует",
-        "Баламутит", "Ловчит", "Выдумывает", "Кудесничает"
+        "Жонглирует", "Ваяет", "Затевает", "Хлопочет", "Барахтается",
+        "Усердствует", "Кипит", "Мудрствует", "Вершит", "Колдует",
+        "Билдит", "Превозмогает", "Маневрирует", "Ограняет", "Мудрит",
+        "Созидает", "Ковыряется", "Баламутит", "Лавирует", "Креативит",
+        "Претворяет", "Ладит", "Стяжает", "Ресерчит", "Корпит",
+        "Замышляет", "Симулирует", "Халтурит", "Тужится", "Выверяет",
+        "Копошится", "Бдит", "Ухищряется", "Суетится", "Шлифует",
+        "Интригует", "Пыхтит", "Куражится", "Пыжится", "Шаманит",
+        "Потеет", "Свершает", "Шуршит", "Имитирует", "Кипишует",
+        "Факапит", "Изгаляется", "Воплощает", "Пашет", "Соображает",
+        "Фокусничает", "Выдумывает", "Кочевряжится", "Дебажит", "Мастерит",
+        "Кумекает", "Содевает", "Осуществляет", "Шурует", "Надрывается",
+        "Пушит", "Кочегарит", "Трудится", "Старается", "Мельтешит",
+        "Городит", "Пыхтюкает", "Мается", "Утомляется", "Колупает",
+        "Филонит", "Шкодит", "Пытается", "Рофлит", "Исполняет",
+        "Стряпает", "Напрягается", "Кряхтит", "Ворожит", "Шебуршит",
+        "Тарахтит", "Куралесит", "Чиллит", "Крутится", "Ловчит",
+        "Пилит", "Импровизирует", "Ерзает", "Изобретает", "Производит",
+        "Фармит", "Пробует", "Изготавливает", "Создаёт", "Возится",
+        "Сооружает", "Творит", "Фиксит", "Химичит", "Зиждет",
+        "Мозгует", "Затейничает", "Чудит", "Изощряется", "Питчит",
+        "Хитрит", "Буксует", "Воркает", "Джобает", "Кудесничает",
+        "Балагурит"
     ]
 
     private struct Assignment: Codable, Equatable {
@@ -219,7 +244,7 @@ private struct RunningCaptions: Codable {
 
     private var entries: [ActivityCard.ID: Assignment] = [:]
     // The new order has its own cursor. Existing assignments can still be reused.
-    private var nextCaptionIndexV2: Int?
+    private var nextCaptionIndexV5: Int?
 
     func verb(for card: ActivityCard) -> String? {
         guard let entry = entries[card.id], entry.matches(card) else { return nil }
@@ -261,13 +286,13 @@ private struct RunningCaptions: Codable {
     }
 
     private mutating func nextVerb(excluding used: Set<String>, previous: String?) -> String {
-        let start = nextCaptionIndexV2.flatMap { Self.verbs.indices.contains($0) ? $0 : nil } ?? 0
+        let start = nextCaptionIndexV5.flatMap { Self.verbs.indices.contains($0) ? $0 : nil } ?? 0
         let free = Self.verbs.indices.map { (start + $0) % Self.verbs.count }
             .filter { !used.contains(Self.verbs[$0]) }
         guard let index = free.first(where: { Self.verbs[$0] != previous }) ?? free.first else {
             return PanelModel.defaultRunningVerb
         }
-        nextCaptionIndexV2 = (index + 1) % Self.verbs.count
+        nextCaptionIndexV5 = (index + 1) % Self.verbs.count
         return Self.verbs[index]
     }
 

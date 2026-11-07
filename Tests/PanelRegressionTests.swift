@@ -1,3 +1,4 @@
+import ActivityPanelStyle
 import AppKit
 import ActivityCore
 import ServiceManagement
@@ -29,7 +30,284 @@ private final class HeaderTestPanel: NSPanel {
     }
 }
 
+private final class ActiveExecution: ExecutionObserving {
+    var revision: UInt64 { 0 }
+
+    func observe(threadIDs: Set<String>) -> [String: LocalExecution] {
+        Dictionary(uniqueKeysWithValues: threadIDs.map { ($0, LocalExecution(status: .active)) })
+    }
+}
+
+private final class FakeLauncherService: LauncherService {
+    var codexRunning = true
+    var panelRunning = false
+    var opens = 0
+    var stops = 0
+    var stoppedApplication: NSRunningApplication?
+    var completion: ((NSRunningApplication?) -> Void)?
+
+    func openPanel(completion: @escaping (NSRunningApplication?) -> Void) {
+        precondition(self.completion == nil, "Only one launch may be in flight")
+        opens += 1
+        self.completion = completion
+    }
+
+    func stopPanels(including opened: NSRunningApplication?) {
+        stops += 1
+        stoppedApplication = opened
+        panelRunning = false
+    }
+
+    func finish(_ application: NSRunningApplication? = nil) {
+        let callback = completion!
+        completion = nil
+        callback(application)
+    }
+}
+
 @main struct PanelRegressionTests {
+    @MainActor private static func testPeriodPreferenceIsolation() {
+        let sharedPeriod = UserDefaults.standard.object(forKey: "trackingHours") as? Int
+        let sharedWidth = UserDefaults.standard.object(forKey: "widthMM") as? Double
+        let names = (0..<3).map { _ in "io.github.moky-me.CodexActivity.period.\(UUID().uuidString)" }
+        let stores = names.map { UserDefaults(suiteName: $0)! }
+        defer {
+            for (name, store) in zip(names, stores) { store.removePersistentDomain(forName: name) }
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        func model(_ store: UserDefaults) -> PanelModel {
+            PanelModel(loginService: FakeLoginService(), preferences: store,
+                       repository: ActivityRepository(root: root))
+        }
+        stores[0].set(12, forKey: "trackingHours")
+        stores[1].set(24, forKey: "trackingHours")
+        stores[0].set(27, forKey: "widthMM")
+        stores[1].set(30, forKey: "widthMM")
+        let first = model(stores[0])
+        precondition(first.period == .twelveHours, "The period comes from the injected store")
+        precondition(stores[0].object(forKey: "widthMM") == nil &&
+                     stores[1].object(forKey: "widthMM") != nil, "Migration only changes its own store")
+        let second = model(stores[1])
+        precondition(second.period == .day && stores[1].object(forKey: "widthMM") == nil)
+        first.setPeriod(.eightHours)
+        precondition(stores[0].integer(forKey: "trackingHours") == 8 &&
+                     stores[1].integer(forKey: "trackingHours") == 24)
+        precondition(model(stores[0]).period == .eightHours, "The selected period survives recreation")
+        second.setPeriod(.unlimited)
+        precondition(model(stores[1]).period == .unlimited &&
+                     model(stores[0]).period == .eightHours)
+        precondition(model(stores[2]).period == .fourHours, "Missing preference uses four hours")
+        stores[2].set(7, forKey: "trackingHours")
+        precondition(model(stores[2]).period == .fourHours, "Invalid preference uses four hours")
+        precondition(UserDefaults.standard.object(forKey: "trackingHours") as? Int == sharedPeriod &&
+                     UserDefaults.standard.object(forKey: "widthMM") as? Double == sharedWidth,
+                     "Injected settings must not write to the shared domain")
+    }
+
+    @MainActor private static func testLauncherRetries() async throws {
+        @MainActor func afterLaunchCallback(_ action: @escaping () -> Void) async {
+            await withCheckedContinuation { continuation in
+                DispatchQueue.main.async {
+                    action()
+                    continuation.resume()
+                }
+            }
+        }
+        func waitUntil(_ condition: () -> Bool) async throws {
+            for _ in 0..<200 {
+                if condition() { return }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            preconditionFailure("The launch callback or retry did not finish")
+        }
+        let service = FakeLauncherService()
+        let launcher = Launcher(service: service, retryDelay: 0.02)
+        launcher.reconcile()
+        launcher.reconcile()
+        precondition(service.opens == 1, "Workspace events must not create parallel launches")
+        service.finish()
+        try await waitUntil { service.opens == 2 }
+        launcher.reconcile()
+        precondition(service.opens == 2)
+        service.finish()
+        try await waitUntil { service.opens == 3 }
+        service.finish()
+        try await Task.sleep(for: .milliseconds(80))
+        launcher.reconcile()
+        precondition(service.opens == 3, "Three failed attempts exhaust the budget")
+        service.codexRunning = false
+        launcher.reconcile()
+        service.codexRunning = true
+        launcher.reconcile()
+        precondition(service.opens == 4, "A new Codex session gets a fresh launch budget")
+        service.panelRunning = true
+        service.finish()
+        try await Task.sleep(for: .milliseconds(80))
+        launcher.reconcile()
+        precondition(service.opens == 4, "A running panel cancels retries")
+
+        let returned = FakeLauncherService()
+        let returnedLauncher = Launcher(service: returned, retryDelay: 0.02)
+        returnedLauncher.reconcile()
+        returned.finish(.current)
+        try await Task.sleep(for: .milliseconds(80))
+        precondition(returned.opens == 1, "The returned process confirms success before workspace registration")
+
+        let interrupted = FakeLauncherService()
+        let interruptedLauncher = Launcher(service: interrupted, retryDelay: 0.02)
+        interruptedLauncher.reconcile()
+        interrupted.codexRunning = false
+        interruptedLauncher.reconcile()
+        // LaunchServices may return the process before runningApplications includes it.
+        interrupted.finish(.current)
+        try await waitUntil { interrupted.stoppedApplication != nil }
+        try await Task.sleep(for: .milliseconds(80))
+        precondition(interrupted.stoppedApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier &&
+                     interrupted.opens == 1, "A late result must be stopped after Codex exits")
+
+        let cancelled = FakeLauncherService()
+        let cancelledLauncher = Launcher(service: cancelled, retryDelay: 0.05)
+        cancelledLauncher.reconcile()
+        cancelled.finish()
+        await afterLaunchCallback {
+            cancelled.codexRunning = false
+            cancelledLauncher.reconcile()
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        precondition(cancelled.opens == 1, "Codex exit cancels a scheduled retry")
+
+        let external = FakeLauncherService()
+        let externalLauncher = Launcher(service: external, retryDelay: 0.05)
+        externalLauncher.reconcile()
+        external.finish()
+        await afterLaunchCallback {
+            external.panelRunning = true
+            externalLauncher.reconcile()
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        precondition(external.opens == 1, "A panel opened elsewhere cancels a scheduled retry")
+    }
+
+    @MainActor private static func testReadFailureAndRecovery() async throws {
+        let files = FileManager.default
+        let root = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try files.createDirectory(at: root.appendingPathComponent("sqlite"), withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: root) }
+        let suite = "io.github.moky-me.CodexActivity.read-failure.\(UUID().uuidString)"
+        let preferences = UserDefaults(suiteName: suite)!
+        defer { preferences.removePersistentDomain(forName: suite) }
+        let runningID = UUID().uuidString
+        let workID = UUID().uuidString
+        let completedID = UUID().uuidString
+        let now = Date().timeIntervalSince1970
+
+        func sql(_ database: String, _ statement: String) throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+            process.arguments = [root.appendingPathComponent(database).path, statement]
+            try process.run()
+            process.waitUntilExit()
+            precondition(process.terminationStatus == 0, "Fixture SQL must succeed")
+        }
+        try sql("state_5.sqlite", """
+            CREATE TABLE projects(id TEXT,name TEXT);
+            CREATE TABLE threads(id TEXT,title TEXT,name TEXT,cwd TEXT,source TEXT,agent_path TEXT,
+                recency_at_ms REAL,project_id TEXT,archived INTEGER,originator TEXT,tokens_used INTEGER);
+            INSERT INTO threads VALUES
+                ('\(runningID)','Codex',NULL,'/fixture','cli',NULL,\(now*1000),NULL,0,NULL,1000),
+                ('\(workID)','Work',NULL,'/fixture','cli',NULL,\(now*1000),NULL,0,'codex_work_desktop',2000),
+                ('\(completedID)','Done',NULL,'/fixture','cli',NULL,\(now*1000),NULL,0,NULL,3000);
+            """)
+        try sql("thread_history_1.sqlite", """
+            CREATE TABLE thread_turns(thread_id TEXT,rollout_ordinal INTEGER,status TEXT,
+                started_at REAL,completed_at REAL,turn_id TEXT,duration_ms REAL);
+            CREATE TABLE thread_items(thread_id TEXT,rollout_ordinal INTEGER,item_type TEXT,
+                item_json TEXT,created_at_ms REAL,started_at_ms REAL,completed_at_ms REAL,turn_id TEXT);
+            INSERT INTO thread_turns VALUES
+                ('\(runningID)',1,'inProgress',\(now-120),NULL,'codex-turn',NULL),
+                ('\(workID)',1,'inProgress',\(now-90),NULL,'work-turn',NULL),
+                ('\(completedID)',1,'completed',\(now-180),\(now-60),'done-turn',120000);
+            """)
+        try sql("sqlite/codex.db", """
+            CREATE TABLE local_thread_catalog(host_id TEXT,thread_id TEXT,display_title TEXT,cwd TEXT,
+                source_detail TEXT,source_recency_at REAL,missing_candidate INTEGER);
+            CREATE TABLE local_thread_catalog_hosts(host_id TEXT,host_kind TEXT);
+            """)
+        let repository = ActivityRepository(root: root, execution: ActiveExecution())
+        let model = PanelModel(loginService: FakeLoginService(), preferences: preferences, repository: repository)
+        func reload(force: Bool = true) async throws {
+            model.loading = true
+            model.refresh(force: force)
+            for _ in 0..<250 {
+                if !model.loading { return }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            preconditionFailure("The read must finish")
+        }
+        try await reload()
+        precondition(model.notice == nil && model.cards.filter { $0.state == .running }.count == 2)
+        precondition(model.cards.first { $0.threadID == workID }?.source == .work)
+        let caption = model.runningVerb(for: model.cards.first { $0.threadID == runningID }!)
+        let terminal = model.cards.first { $0.threadID == completedID }!
+        let remote = ActivityCard(threadID: UUID().uuidString, hostID: "ssh:fixture", title: "Remote",
+            project: "Fixture", summary: "Old summary", state: .running, updatedAt: Date(),
+            turnStartedAt: Date(), awaitingExecutionConfirmation: true, turnID: "remote-turn")
+        let waiting = ActivityCard(threadID: UUID().uuidString, title: "Question", project: "Fixture",
+            summary: "Confirmed question", state: .needsInput, updatedAt: Date(), pendingCount: 1,
+            waitingSince: Date(), turnID: "question-turn")
+        model.cards += [remote, waiting]
+        for state in [ActivityState.failed, .paused, .unknown] {
+            model.cards.append(ActivityCard(threadID: UUID().uuidString, title: "Retained", project: "Fixture",
+                summary: state.label, state: state, updatedAt: Date()))
+        }
+        let previous = model.cards
+        for host in ["chatgpt:fixture:user"] {
+            model.cards.append(ActivityCard(threadID: UUID().uuidString, hostID: host, title: "Account",
+                project: "Fixture", summary: "Account", state: .running, updatedAt: Date()))
+        }
+        let database = root.appendingPathComponent("state_5.sqlite")
+        let offline = root.appendingPathComponent("offline.sqlite")
+        try files.moveItem(at: database, to: offline)
+        try await reload()
+        precondition(model.notice != nil && !files.fileExists(atPath: database.path))
+        precondition(model.cards.count == previous.count && !model.cards.contains { $0.isChatGPTHosted })
+        precondition(!model.cards.contains { $0.state == .running })
+        precondition(model.cards == ActivityPolicy.sorted(model.cards, now: Date()),
+                     "Downgraded cards must move into the existing other group")
+        for card in previous {
+            let retained = model.cards.first { $0.id == card.id }!
+            if card.state == .running {
+                precondition(retained.state == .unknown && retained.state.group == .other)
+                precondition(retained.summary == "источник данных недоступен" && !retained.awaitingExecutionConfirmation)
+                precondition(retained.url == card.url && retained.updatedAt == card.updatedAt &&
+                    retained.turnStartedAt == card.turnStartedAt && retained.turnID == card.turnID &&
+                    retained.tokenUsage == card.tokenUsage && retained.source == card.source)
+            } else {
+                precondition(retained == card, "Confirmed completion and outstanding requests must be retained")
+            }
+        }
+        let unavailable = model.cards
+        try await reload(force: false)
+        precondition(model.cards == unavailable, "Repeated failures must keep the fallback stable")
+        try files.moveItem(at: offline, to: database)
+        try await reload(force: false)
+        precondition(model.notice == nil && model.cards.count == 3)
+        precondition(model.cards.first { $0.threadID == runningID }?.state == .running)
+        precondition(model.runningVerb(for: model.cards.first { $0.threadID == runningID }!) == caption)
+        precondition(model.cards.first { $0.threadID == completedID } == terminal)
+        try sql("thread_history_1.sqlite", """
+            UPDATE thread_turns SET status='completed',completed_at=\(now),duration_ms=120000
+            WHERE thread_id='\(runningID)';
+            """)
+        try await reload()
+        let finished = model.cards.first { $0.threadID == runningID }!
+        precondition(finished.state == .completed && finished.turnDuration == 120)
+        try files.moveItem(at: database, to: offline)
+        try await reload()
+        precondition(model.cards.first { $0.threadID == runningID } == finished,
+                     "A later read failure must preserve confirmed completion")
+    }
+
     @MainActor private static func testHeaderDragAndZoom(model: PanelModel, width: CGFloat) {
         guard let screen = NSScreen.main else { return }
         let visible = screen.visibleFrame
@@ -80,8 +358,19 @@ private final class HeaderTestPanel: NSPanel {
             send(.leftMouseUp, count: 1, to: view, at: start)
         }
         precondition(panel.dragCount == 2, "Drag must work on the blank strip and title")
-        precondition(hit(at: NSPoint(x: width - 20, y: host.bounds.height - 20)) is NSButton,
+        let menu = hit(at: NSPoint(x: width - 20, y: host.bounds.height - 20)) as? NSButton
+        precondition(menu?.accessibilityLabel() == "настройки панели",
                      "The settings menu must remain above the drag surface")
+        let period = hit(at: NSPoint(x: 35, y: host.bounds.height - 46)) as? NSButton
+        precondition(period?.accessibilityLabel() == "период наблюдения" &&
+                     period?.accessibilityValue() as? String == "4 часа",
+                     "The period needs its own native control and accessible value")
+        if let menu, let period {
+            let menuFrame = menu.convert(menu.bounds, to: host)
+            let periodFrame = period.convert(period.bounds, to: host)
+            precondition(menuFrame.intersection(periodFrame).isEmpty,
+                         "The menu and period hit areas must not overlap")
+        }
 
         click(1, at: top)
         click(2, at: top)
@@ -106,7 +395,7 @@ private final class HeaderTestPanel: NSPanel {
             ActivityCard(threadID:String(index),title:"Test",project:"Test",summary:"",state:state,
                          updatedAt:start.addingTimeInterval(10),turnStartedAt:start.addingTimeInterval(shift),turnID:turn)
         }
-        let count = 84
+        let count = 111
         let running = (0..<count).map { card($0) }
         let referenceSuite = suite + ".reference"
         let referencePreferences = UserDefaults(suiteName:referenceSuite)!
@@ -115,7 +404,10 @@ private final class HeaderTestPanel: NSPanel {
         reference.cards = running
         let verbs = running.map { reference.runningVerb(for:$0) }
         precondition(Set(verbs).count == count && !verbs.contains("Делает"),
-                     "The full cycle must assign 84 distinct captions before overflow")
+                     "The full cycle must assign 111 distinct captions before overflow")
+        let added = ["Воркает", "Джобает", "Фиксит", "Пушит", "Дебажит", "Факапит",
+                     "Фармит", "Ресерчит", "Чиллит", "Рофлит", "Питчит", "Билдит"]
+        precondition(Set(added).isSubset(of: Set(verbs)), "The cycle must include all requested words")
         model.cards = Array(running.prefix(10))
         precondition(model.cards.map { model.runningVerb(for:$0) } == Array(verbs.prefix(10)),
                      "New turns must use the given order")
@@ -125,7 +417,7 @@ private final class HeaderTestPanel: NSPanel {
                      "Restart must resume the cycle even when earlier words are free")
         restarted.cards = running
         precondition(running.map { restarted.runningVerb(for:$0) } == verbs,
-                     "Simultaneous turns must use all 84 different words in order")
+                     "Simultaneous turns must use all 111 different words in order")
         restarted.cards = Array(running.reversed()) + [card(count)]
         precondition(running.map { restarted.runningVerb(for:$0) } == verbs &&
                      restarted.runningVerb(for:card(count)) == "Делает",
@@ -148,6 +440,7 @@ private final class HeaderTestPanel: NSPanel {
                      "A later turn ID must preserve the assignment made from its start time")
         precondition(CardView.shortRunningDuration(86_340) == "23 ч",
                      "A narrow caption retains elapsed hours when minutes do not fit")
+        precondition(CardView.tightRunningDuration(660) == "11м")
         let legacy = #"{"nextVerbIndex":15,"entries":{"local:3":{"turnID":"first","verb":"Создает"}}}"#
         preferences.set(Data(legacy.utf8),forKey:"runningCaptions")
         let migrated = PanelModel(loginService:FakeLoginService(),preferences:preferences)
@@ -166,13 +459,13 @@ private final class HeaderTestPanel: NSPanel {
         updatedRestart.cards = [card(count+5)]
         precondition(updatedRestart.runningVerb(for:card(count+5)) == verbs[verbs[0] == "Колдует" ? 2 : 1],
                      "The new cursor persists after migration")
-        let currentOrder = #"{"nextCaptionIndexV2":15,"entries":{"local:4":{"turnID":"first","verb":"Колдует"}}}"#
+        let currentOrder = #"{"nextCaptionIndexV4":15,"entries":{"local:4":{"turnID":"first","verb":"Колдует"}}}"#
         preferences.set(Data(currentOrder.utf8),forKey:"runningCaptions")
         let extended = PanelModel(loginService:FakeLoginService(),preferences:preferences)
         extended.cards = [card(4),card(count+6)]
         precondition(extended.runningVerb(for:card(4)) == "Колдует" &&
-                     extended.runningVerb(for:card(count+6)) == verbs[15...].first(where: { $0 != "Колдует" }),
-                     "Updating the list preserves the stored cursor and assigned words")
+                     extended.runningVerb(for:card(count+6)) == verbs.first(where: { $0 != "Колдует" }),
+                     "Reshuffling starts a fresh cursor and keeps assigned words")
     }
 
     @MainActor private static func testGroupMoveAtScrollLimit(model: PanelModel) {
@@ -332,7 +625,7 @@ private final class HeaderTestPanel: NSPanel {
         precondition(values().details.contains("ожидаются данные") && values(age:60).details.contains("нет данных"))
     }
 
-    @MainActor static func main() async {
+    @MainActor static func main() async throws {
         testTokenWaiting()
         let defaults = UserDefaults.standard
         let spacesKey = "showOnAllSpaces"
@@ -433,8 +726,12 @@ private final class HeaderTestPanel: NSPanel {
         precondition(!model.launchEnabled && !model.launchChanging)
         precondition(!AppDelegate().applicationShouldTerminateAfterLastWindowClosed(NSApplication.shared), "Dismissing transient windows must not quit the panel")
         testHeaderDragAndZoom(model: model, width:150)
+        testHeaderDragAndZoom(model: model, width:131)
         testHeaderDragAndZoom(model: model, width:124)
         testRunningCaptions()
+        testPeriodPreferenceIsolation()
+        try await testReadFailureAndRecovery()
+        try await testLauncherRetries()
         testGroupMoveAtScrollLimit(model: model)
         print("Panel regressions passed: preferences and token visibility, login controls, window lifecycle, header drag and zoom, scroll limit, status transitions")
     }

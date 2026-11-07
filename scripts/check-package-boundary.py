@@ -16,7 +16,8 @@ PUBLIC_PRODUCTS = {
 PUBLIC_TARGETS = {
     "CSQLite": ("system", "Sources/CSQLite", []),
     "ActivityCore": ("regular", "Sources/ActivityCore", ["CSQLite"]),
-    "ActivityPanel": ("executable", "Sources/ActivityPanel", ["ActivityCore"]),
+    "ActivityPanelStyle": ("regular", "Sources/ActivityPanelStyle", ["ActivityCore"]),
+    "ActivityPanel": ("executable", "Sources/ActivityPanel", ["ActivityCore", "ActivityPanelStyle"]),
     "ActivityLauncher": ("executable", "Sources/ActivityLauncher", ["ActivityCore"]),
     "ActivityDiagnostics": ("executable", "Sources/ActivityDiagnostics", ["ActivityCore"]),
     "ActivityCoreTests": ("executable", "Tests/ActivityCoreTests", ["ActivityCore"]),

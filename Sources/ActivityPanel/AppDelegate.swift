@@ -5,12 +5,13 @@ import ServiceManagement
 
 final class ActivityWindow: NSPanel {
     private static let allSpacesPreference = "showOnAllSpaces"
+    private static let aboveNormalWindowsPreference = "showAboveNormalWindows"
 
     override init(contentRect: NSRect, styleMask: NSWindow.StyleMask,
                   backing: NSWindow.BackingStoreType, defer flag: Bool) {
         super.init(contentRect:contentRect, styleMask:styleMask, backing:backing, defer:flag)
         allowsToolTipsWhenApplicationIsInactive = true
-        level = .normal
+        applyWindowLevel(UserDefaults.standard.bool(forKey: Self.aboveNormalWindowsPreference))
         applySpaces(UserDefaults.standard.object(forKey: Self.allSpacesPreference) as? Bool ?? true)
     }
 
@@ -22,6 +23,25 @@ final class ActivityWindow: NSPanel {
         item.target = self
         item.state = collectionBehavior.contains(.canJoinAllSpaces) ? .on : .off
         return item
+    }
+
+    func aboveNormalWindowsMenuItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "поверх обычных окон", action: #selector(toggleAboveNormalWindows(_:)), keyEquivalent: "")
+        item.target = self
+        item.state = level == .floating ? .on : .off
+        return item
+    }
+
+    @objc private func toggleAboveNormalWindows(_ sender: NSMenuItem) {
+        let enabled = level != .floating
+        applyWindowLevel(enabled)
+        UserDefaults.standard.set(enabled, forKey: Self.aboveNormalWindowsPreference)
+        sender.state = enabled ? .on : .off
+    }
+
+    private func applyWindowLevel(_ aboveNormalWindows: Bool) {
+        level = aboveNormalWindows ? .floating : .normal
+        childWindows?.forEach { $0.level = level }
     }
 
     @objc private func toggleAllSpaces(_ sender: NSMenuItem) {
