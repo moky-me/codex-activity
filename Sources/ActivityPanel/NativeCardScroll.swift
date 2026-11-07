@@ -41,10 +41,12 @@ private struct PositionedCard: View, Animatable {
     }
 
     var body: some View {
-        CardView(card:card, visible:visible, action:action,
-                 spacing:spacing, showsTokens:showsTokens,
-                 statusProgress:statusTransition?.progress(at:statusPhase) ?? 1,
-                 previousStatus:statusTransition?.previous, runningVerb:runningVerb)
+        TimelineView(CardView.clockSchedule(for:card)) { clock in
+            CardView(card:card, visible:visible, action:action,
+                     spacing:spacing, showsTokens:showsTokens,
+                     statusProgress:statusTransition?.progress(at:statusPhase) ?? 1,
+                     previousStatus:statusTransition?.previous, runningVerb:runningVerb, now:max(clock.date,Date()))
+        }
             .offset(y:position)
             .transaction(value:animatableData) {
                 // The outer animation already interpolates position and status opacity.

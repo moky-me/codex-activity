@@ -13,6 +13,7 @@ struct CardView: View {
     var statusProgress: Double = 1
     var previousStatus: ActivityCard? = nil
     var runningVerb = PanelModel.defaultRunningVerb
+    var now = Date()
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
@@ -22,7 +23,6 @@ struct CardView: View {
     @State private var tokensHovered = false
     @State private var pulse = false
     @State private var eventTask: Task<Void,Never>?
-    @State private var elapsedClock = Date()
     private var runningCaption: String { runningVerb.lowercased() }
     private var title: String { card.title.lowercased() }
     private var project: String { card.project.lowercased() }
@@ -38,25 +38,18 @@ struct CardView: View {
         card.source == .work && card.isChatGPTHosted ? "облачный work" : card.source.label
     }
     private static let openHint = "открыть чат в приложении"
-    private var age: String { ActivityPolicy.age(card.updatedAt) }
+    private var age: String { ActivityPolicy.age(card.updatedAt, now:now) }
     private var tokenValues: CardTokenRow.Values? {
         guard ActivityListLayout.showsTokenRow(for:card,showsTokens:showsTokens) else { return nil }
-        return CardTokenRow.Values(card:card,now:elapsedClock)
+        return CardTokenRow.Values(card:card,now:now)
     }
     private var cardHeight: CGFloat { ActivityListLayout.cardHeight(for:card,showsTokens:showsTokens) }
-    private var timerStart: Date? {
-        switch card.state {
-        case .running: return card.turnStartedAt
-        case .needsInput: return card.waitingSince
-        default: return nil
-        }
-    }
     private func waitingAge(for card: ActivityCard) -> String {
         guard let date = card.waitingSince else { return "—" }
-        return ActivityPolicy.age(date, now:elapsedClock, underMinute:"<1 мин")
+        return ActivityPolicy.age(date, now:now, underMinute:"<1 мин")
     }
     private func elapsed(for card: ActivityCard) -> TimeInterval? {
-        card.turnStartedAt.map { max(0, elapsedClock.timeIntervalSince($0)) }
+        card.turnStartedAt.map { max(0, now.timeIntervalSince($0)) }
     }
     private var timingDescription: String {
         switch card.state {
@@ -71,6 +64,17 @@ struct CardView: View {
         default:
             return "последняя активность: \(age)"
         }
+    }
+
+    static func clockSchedule(for card: ActivityCard, now: Date = Date()) -> PeriodicTimelineSchedule {
+        let start: Date
+        switch card.state {
+        case .running: start = card.turnStartedAt ?? card.updatedAt
+        case .needsInput: start = card.waitingSince ?? card.updatedAt
+        case .completed: start = Calendar.current.startOfDay(for:now)
+        default: start = card.updatedAt
+        }
+        return .init(from:start, by:60)
     }
 
     var body: some View {
@@ -98,18 +102,6 @@ struct CardView: View {
             .filter { !$0.isEmpty }.joined(separator:"\n"))
         .accessibilityLabel([title, sourceLabel, project, status, details, tokens, summary]
             .filter { !$0.isEmpty }.joined(separator:". "))
-        .task(id: visible ? timerStart : nil) {
-            guard visible, let start = timerStart else { return }
-            while !Task.isCancelled {
-                elapsedClock = Date()
-                let seconds = max(0, elapsedClock.timeIntervalSince(start))
-                do {
-                    try await Task.sleep(for:.seconds(60 - seconds.truncatingRemainder(dividingBy:60)))
-                } catch {
-                    return
-                }
-            }
-        }
         .onChange(of:settledState) { _,state in
             eventTask?.cancel()
             if state != .completed { durationHovered=false }
@@ -285,7 +277,7 @@ struct CardView: View {
             HStack(spacing:0) {
                 Text(status).foregroundStyle(statusColor).lineLimit(1)
                 Spacer(minLength:6)
-                Text(card.state == .needsInput ? waitingAge(for:card) : ActivityPolicy.age(card.updatedAt))
+                Text(card.state == .needsInput ? waitingAge(for:card) : ActivityPolicy.age(card.updatedAt, now:now))
                     .foregroundStyle(PanelPalette.muted(scheme)).lineLimit(1)
                     .fixedSize(horizontal:true,vertical:false)
             }
@@ -302,7 +294,7 @@ struct CardView: View {
             }
             if let date = card.turnCompletedAt {
                 Spacer(minLength:card.turnDuration == nil ? 0 : 6)
-                timeLabel(Self.completionLabel(date, short:shortDate), symbol:showSymbols ? "flag.checkered" : nil)
+                timeLabel(Self.completionLabel(date, short:shortDate, now:now), symbol:showSymbols ? "flag.checkered" : nil)
                     .foregroundStyle(PanelPalette.muted(scheme))
                     .layoutPriority(1)
                     .help("завершён \(Self.completionTimestamp(date))")

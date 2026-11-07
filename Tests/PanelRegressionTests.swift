@@ -607,6 +607,39 @@ private final class FakeLauncherService: LauncherService {
                      "Showing hosted chats must restore the latest catalog without another refresh")
     }
 
+    @MainActor private static func testCardClock() {
+        let now = Date(timeIntervalSince1970:1_800_000_000)
+        let running = ActivityCard(threadID:"new-turn",title:"clock",project:"fixture",summary:"fixed",
+            state:.running,updatedAt:now,turnStartedAt:now.addingTimeInterval(25))
+        let current = now.addingTimeInterval(35)
+        let ticks = Array(CardView.clockSchedule(for:running).entries(from:current,mode:.normal).prefix(2))
+        precondition(ticks == [now.addingTimeInterval(25),now.addingTimeInterval(85)],
+                     "The first minute expires at the turn boundary, not at the next wall-clock minute")
+        precondition(CardTokenRow.Values(card:running,now:max(ticks[0],current)).isWaiting)
+        precondition(!CardTokenRow.Values(card:running,now:ticks[1]).isWaiting)
+        let card = ActivityCard(threadID:"clock", title:"clock", project:"fixture", summary:"fixed",
+                                state:.unknown, updatedAt:now.addingTimeInterval(-57))
+        let host = NSHostingView(rootView:CardView(card:card, visible:true, action:{}, now:now).frame(width:150))
+        let window = NSWindow(contentRect:NSRect(x:0,y:0,width:150,height:160), styleMask:.borderless,
+                              backing:.buffered, defer:false)
+        window.contentView = host
+        func bitmap() -> Data {
+            host.layoutSubtreeIfNeeded()
+            let bitmap = host.bitmapImageRepForCachingDisplay(in:host.bounds)!
+            host.cacheDisplay(in:host.bounds,to:bitmap)
+            return bitmap.representation(using:.png,properties:[:])!
+        }
+        let before = bitmap()
+        host.rootView = CardView(card:card, visible:true, action:{}, now:now.addingTimeInterval(5)).frame(width:150)
+        precondition(bitmap() != before, "An unchanged card must render the new clock, without a new snapshot")
+        var calendar = Calendar(identifier:.gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT:0)!
+        let midnight = calendar.startOfDay(for:now).addingTimeInterval(86400)
+        precondition(CardView.completionLabel(now,now:midnight.addingTimeInterval(-1),calendar:calendar) !=
+                     CardView.completionLabel(now,now:midnight,calendar:calendar))
+        precondition(!window.isVisible)
+    }
+
     private static func testTokenWaiting() {
         let start = Date(timeIntervalSince1970:1_800_000_000)
         func values(host: String = "local", state: ActivityState = .running,
@@ -626,6 +659,7 @@ private final class FakeLauncherService: LauncherService {
     }
 
     @MainActor static func main() async throws {
+        testCardClock()
         testTokenWaiting()
         let defaults = UserDefaults.standard
         let spacesKey = "showOnAllSpaces"
