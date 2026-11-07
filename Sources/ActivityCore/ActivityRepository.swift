@@ -2,7 +2,7 @@ import Foundation
 
 /// Confined to one background queue. Reads Codex's local projection; never writes to it.
 public final class ActivityRepository {
-    private let root: URL
+    public let root: URL
     private let execution: ExecutionObserving
     public var runtimeRevision: UInt64 { execution.revision }
     private struct Questions { var tracker = QuestionTracker(); var approvalStatus: String? }

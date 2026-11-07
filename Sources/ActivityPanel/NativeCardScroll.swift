@@ -1,3 +1,4 @@
+import ActivityPanelStyle
 import AppKit
 import SwiftUI
 import ActivityCore
@@ -278,7 +279,6 @@ struct CardList: View {
         switch row.content {
         case .heading(_, let title):
             Text(title).font(.system(size:11,weight:.medium)).foregroundStyle(PanelPalette.muted(scheme))
-                .padding(.horizontal,spacing.cardInset)
                 .frame(maxWidth:.infinity,alignment:.leading)
                 .frame(height:ActivityListLayout.headingHeight)
                 .accessibilityAddTraits(.isHeader)

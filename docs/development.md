@@ -14,8 +14,8 @@ swift run ActivityCoreTests
 CI проверяет разрешённые продукты, цели и связи SwiftPM и отсутствие импортов Telegram и TDLib. Проверка запускается до сборки. Тесты ядра используют синтетические базы и локальный тестовый IPC. Тесты панели проверяют разметку, состояния, анимации и настройки на тестовых данных. Они не требуют входа в Codex. Для проверки поведения в настоящем окне есть [сценарий нового Mac](setup.md#проверка-на-новом-mac).
 
 - `Sources/ActivityCore` читает локальные данные, определяет статусы и готовит карточки.
-- `Sources/ActivityPanel` содержит окно в `AppDelegate.swift`, шапку и меню в `PanelViews.swift`, прокрутку и переходы в `NativeCardScroll.swift`, карточку и токены в `CardView.swift` и `CardTokenRow.swift`. Общие цвета и эффекты наведения находятся в `PanelStyle.swift`.
-- `Sources/ActivityLauncher` содержит системный помощник автозапуска.
+- `Sources/ActivityPanel` содержит окно в `AppDelegate.swift`, шапку и меню в `PanelViews.swift`, прокрутку и переходы в `NativeCardScroll.swift`, карточку и токены в `CardView.swift` и `CardTokenRow.swift`. Общие цвета, эффекты наведения и длительности переходов находятся в `Sources/ActivityPanelStyle/PanelStyle.swift`; адаптивные отступы — в `Sources/ActivityPanel/PanelStyle.swift`.
+- `Sources/ActivityLauncher/Launcher.swift` содержит системный помощник автозапуска и ограниченные повторные попытки запуска. `main.swift` только подключает его к приложению.
 - `Sources/ActivityDiagnostics` содержит локальную диагностику. Режимы `--titles` и `--audit` выводят данные чатов. Не прикладывайте этот вывод в публичные задачи.
 
 ## Универсальный пакет и выпуск

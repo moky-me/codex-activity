@@ -11,18 +11,17 @@ public struct ActivityListLayout {
     public static let tokenRowHeight=20.0
     public static let horizontalInset=9.0
     public static let headingHeight=29.0
-    private static let topInset=8.0
+    private static let topInset=5.0
     private static let bottomInset=9.0
     private static let cardGap=8.0
     private static let groupGap=12.0
     public init(cards:[ActivityCard],now:Date,showsTokens:Bool = true) {
         self.showsTokens = showsTokens
         ids=cards.map(\.id)
-        let counts=Dictionary(grouping:cards,by:{ $0.state.group }).mapValues(\.count)
         var positions:[Double]=[]; var headings:[String?]=[]; var cursor=Self.topInset
         for index in cards.indices {
             let group=cards[index].state.group
-            let title:String? = index == 0 || cards[index-1].state.group != group ? "\(group.title) · \(counts[group] ?? 0)" : nil
+            let title:String? = index == 0 || cards[index-1].state.group != group ? group.title : nil
             if index > 0 { cursor += title == nil ? Self.cardGap : Self.groupGap }
             positions.append(cursor); headings.append(title)
             cursor += Self.cardHeight(for:cards[index],showsTokens:showsTokens)+(title == nil ? 0 : Self.headingHeight)

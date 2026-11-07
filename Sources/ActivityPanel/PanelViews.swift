@@ -1,3 +1,4 @@
+import ActivityPanelStyle
 import AppKit
 import SwiftUI
 import ActivityCore
@@ -11,8 +12,12 @@ struct PanelView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var menuHovered = false
     @State private var menuOpen = false
-    private let headerTop: CGFloat = 9
+    @State private var periodHovered = false
+    @State private var periodOpen = false
+    private let headerTop: CGFloat = 8
+    private let titleRowHeight: CGFloat = 22
     private let menuSize = CGSize(width: 28, height: 26)
+
     var body: some View {
         GeometryReader { geometry in
             panelBody(spacing:PanelSpacing(width:geometry.size.width))
@@ -20,39 +25,38 @@ struct PanelView: View {
     }
 
     private func panelBody(spacing: PanelSpacing) -> some View {
-        let headerInset = spacing.contentInset
+        let listInset = ActivityListLayout.horizontalInset
         return VStack(spacing:0) {
             ZStack(alignment:.topTrailing) {
-                VStack(alignment:.leading,spacing:3) {
-                    HStack(spacing:2) {
+                VStack(alignment:.leading,spacing:2) {
+                    HStack(spacing:6) {
                         Text("панелька").foregroundStyle(PanelPalette.ink(scheme)).font(.system(size:14,weight:.semibold))
                             .accessibilityAddTraits(.isHeader)
                         headerDot
-                    }.frame(height:menuSize.height)
-                    ViewThatFits(in:.horizontal) {
-                        Text("наблюдение · \(periodValue)").fixedSize(horizontal:true,vertical:false)
-                        Text("период · \(periodValue)")
-                    }.font(.system(size:11,weight:.medium)).foregroundStyle(PanelPalette.muted(scheme))
-                        .lineLimit(1)
-                        .accessibilityLabel("наблюдение: \(model.period.label.lowercased())")
-                }.frame(maxWidth:.infinity,alignment:.leading)
-                    .padding(.horizontal,headerInset).padding(.top,headerTop).padding(.bottom,8)
+                    }
+                    .frame(maxWidth:.infinity,alignment:.leading)
+                    .frame(height:titleRowHeight)
+                    .padding(.horizontal,listInset).padding(.top,headerTop)
                     .overlay { HeaderDrag().accessibilityHidden(true) }
+                    periodControl.padding(.horizontal,listInset)
+                }.frame(maxWidth:.infinity,alignment:.leading)
+                    .padding(.bottom,7)
                 PanelMenu(model: model, isOpen: $menuOpen, showAbout: showAbout)
                     .frame(width: menuSize.width, height: menuSize.height)
                     .background { HoverArea { menuHovered = $0 } }
                     .background { HoverFill(active: menuHovered || menuOpen, pressed: menuOpen).padding(1) }
-                    .padding(.trailing,8).padding(.top,headerTop)
+                    .padding(.trailing,spacing.headerMenuInset)
+                    .padding(.top,headerTop + (titleRowHeight - menuSize.height) / 2)
             }
-            Rectangle().fill(PanelPalette.divider(scheme)).frame(height:1).padding(.horizontal,headerInset)
-                .accessibilityHidden(true)
+            sectionDivider
+                .padding(.horizontal,listInset)
             ZStack { content(spacing:spacing) }
                 .animation(PanelMotion.feedback.animation(reduceMotion:reduceMotion),value:contentState)
             VStack(spacing:0) {
                 if let notice {
                     Button {
                         let alert = NSAlert()
-                        alert.messageText = "codex activity community"
+                        alert.messageText = "codex activity"
                         alert.informativeText = notice
                         alert.addButton(withTitle: "закрыть")
                         alert.runModal()
@@ -67,6 +71,11 @@ struct PanelView: View {
         .background(PanelPalette.panel(scheme),in:RoundedRectangle(cornerRadius:14,style:.continuous))
         .overlay(RoundedRectangle(cornerRadius:14,style:.continuous).strokeBorder(.primary.opacity(0.09),lineWidth:0.5))
         .clipShape(RoundedRectangle(cornerRadius:14,style:.continuous))
+    }
+
+    private var sectionDivider: some View {
+        Rectangle().fill(PanelPalette.divider(scheme)).frame(height: 1)
+            .accessibilityHidden(true)
     }
 
     private var headerDot: some View {
@@ -89,6 +98,26 @@ struct PanelView: View {
 
     private var notice: String? { model.noticeDetails }
     private var periodValue: String { model.period == .unlimited ? "∞" : "\(model.period.rawValue) ч." }
+
+    private var periodControl: some View {
+        ViewThatFits(in:.horizontal) {
+            periodLabel("наблюдение")
+            periodLabel("период")
+        }
+        .frame(height:20)
+        .accessibilityHidden(true)
+        .background { HoverFill(active:periodHovered || periodOpen, pressed:periodOpen).padding(.horizontal,-3) }
+        .background { HoverArea { periodHovered = $0 } }
+        .overlay { PeriodMenuButton(selection:model.period, isOpen:$periodOpen, select:model.setPeriod) }
+    }
+
+    private func periodLabel(_ title: String) -> some View {
+        Text("\(title) · \(Text(periodValue).fontWeight(.medium).monospacedDigit())")
+            .font(.system(size:11))
+            .foregroundStyle(periodOpen ? PanelPalette.ink(scheme) : PanelPalette.muted(scheme))
+            .lineLimit(1)
+            .fixedSize(horizontal:true,vertical:false)
+    }
 
     private var contentState: ContentState {
         if model.loading { return .loading }
@@ -120,19 +149,72 @@ struct PanelView: View {
             : "здесь появятся чаты\nза последние \(model.period.label)\nи ожидающие ответа."
     }
     private func showAbout() {
-        let alert = NSAlert()
-        alert.messageText = "codex activity community"
+        let alert=NSAlert(); alert.messageText="codex activity community"
         let version = Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String
         let build = Bundle.main.object(forInfoDictionaryKey:"CFBundleVersion") as? String
         let versionInfo = version.map { "версия \($0)" + (build.map { " · сборка \($0)" } ?? "") }
         alert.informativeText = [
             "панель чатов codex · \(model.period.label)",
-            "нажмите карточку, чтобы открыть чат codex или локального work. перетаскивайте окно за шапку. двойной щелчок разворачивает или восстанавливает окно.",
+            "нажмите карточку, чтобы открыть чат. перетаскивайте окно за шапку. двойной щелчок по шапке разворачивает или восстанавливает окно.",
             "запросы, ожидающие ответа, видны независимо от периода. удалённые статусы появляются, когда codex передаёт состояние чата.",
             versionInfo
         ].compactMap { $0 }.joined(separator:"\n\n")
         alert.addButton(withTitle: "закрыть")
         alert.runModal()
+    }
+}
+
+private struct PeriodMenuButton: NSViewRepresentable {
+    let selection: ActivityPeriod
+    @Binding var isOpen: Bool
+    let select: (ActivityPeriod) -> Void
+
+    final class Coordinator: NSObject {
+        var control: PeriodMenuButton
+
+        init(_ control: PeriodMenuButton) { self.control = control }
+
+        @objc func showMenu(_ sender: NSButton) {
+            let menu = NSMenu(title:"период наблюдения")
+            menu.autoenablesItems = false
+            for period in ActivityPeriod.allCases {
+                let item = NSMenuItem(title:period.label, action:#selector(choose(_:)), keyEquivalent:"")
+                item.target = self
+                item.representedObject = period
+                item.state = period == control.selection ? .on : .off
+                menu.addItem(item)
+            }
+            control.isOpen = true
+            defer { control.isOpen = false }
+            let y = sender.isFlipped ? sender.bounds.maxY : sender.bounds.minY
+            menu.popUp(positioning:nil, at:NSPoint(x:sender.bounds.minX,y:y), in:sender)
+        }
+
+        @objc private func choose(_ sender: NSMenuItem) {
+            if let period = sender.representedObject as? ActivityPeriod { control.select(period) }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSView {
+        let container = NSView()
+        let button = NSButton()
+        button.title = ""
+        button.isBordered = false
+        button.target = context.coordinator
+        button.action = #selector(Coordinator.showMenu(_:))
+        button.toolTip = "изменить период наблюдения"
+        button.setAccessibilityLabel("период наблюдения")
+        button.frame = container.bounds
+        button.autoresizingMask = [.width, .height]
+        container.addSubview(button)
+        return container
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.control = self
+        (view.subviews.first as? NSButton)?.setAccessibilityValue(selection.label)
     }
 }
 
@@ -144,7 +226,8 @@ private struct PanelMenu: NSViewRepresentable {
 
     final class Coordinator: NSObject {
         enum Action {
-            case period(ActivityPeriod), toggleCloudChats, toggleTokens, toggleAutostart, loginSettings, about, close
+            case toggleCloudChats, toggleTokens
+            case toggleAutostart, loginSettings, about, close
         }
 
         var model: PanelModel
@@ -160,17 +243,6 @@ private struct PanelMenu: NSViewRepresentable {
         @objc func showMenu(_ sender: NSButton) {
             let menu = NSMenu()
             menu.autoenablesItems = false
-            let periods = NSMenu(title: "период отслеживания")
-            periods.autoenablesItems = false
-            for period in ActivityPeriod.allCases {
-                let option = item(period.label, action: .period(period))
-                option.state = period == model.period ? .on : .off
-                periods.addItem(option)
-            }
-            let periodMenu = NSMenuItem(title: periods.title, action: nil, keyEquivalent: "")
-            periodMenu.submenu = periods
-            menu.addItem(periodMenu)
-            menu.addItem(.separator())
             let cloudChats = item("показывать облачные чаты", action: .toggleCloudChats)
             cloudChats.state = model.showsCloudChats ? .on : .off
             menu.addItem(cloudChats)
@@ -178,6 +250,7 @@ private struct PanelMenu: NSViewRepresentable {
             tokens.state = model.showsTokens ? .on : .off
             menu.addItem(tokens)
             if let panel = sender.window as? ActivityWindow {
+                menu.addItem(panel.aboveNormalWindowsMenuItem())
                 menu.addItem(panel.allSpacesMenuItem())
             }
             let autostart = item("запускать вместе с codex", action: .toggleAutostart)
@@ -208,8 +281,6 @@ private struct PanelMenu: NSViewRepresentable {
         @objc private func performAction(_ sender: NSMenuItem) {
             guard let action = sender.representedObject as? Action else { return }
             switch action {
-            case .period(let period):
-                model.setPeriod(period)
             case .toggleCloudChats:
                 model.setShowsCloudChats(!model.showsCloudChats)
             case .toggleTokens:

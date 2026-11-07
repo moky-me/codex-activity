@@ -13,7 +13,8 @@ let package = Package(
     targets: [
         .systemLibrary(name: "CSQLite"),
         .target(name: "ActivityCore", dependencies: ["CSQLite"]),
-        .executableTarget(name: "ActivityPanel", dependencies: ["ActivityCore"]),
+        .target(name: "ActivityPanelStyle", dependencies: ["ActivityCore"]),
+        .executableTarget(name: "ActivityPanel", dependencies: ["ActivityCore", "ActivityPanelStyle"]),
         .executableTarget(name: "ActivityLauncher", dependencies: ["ActivityCore"]),
         .executableTarget(name: "ActivityDiagnostics", dependencies: ["ActivityCore"]),
         .executableTarget(name: "ActivityCoreTests", dependencies: ["ActivityCore"], path: "Tests/ActivityCoreTests")
