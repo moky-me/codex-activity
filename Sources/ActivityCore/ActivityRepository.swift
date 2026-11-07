@@ -10,7 +10,8 @@ public final class ActivityRepository {
     private var questions: [String: Questions] = [:]
     private var lastLiveTurns: [String: RemoteActivity] = [:]
     private var lastRemoteCatalog: [[String: DBValue]] = []
-    private var observedWaitingSince: [RuntimeThreadKey: Date] = [:]
+    private struct Waiting { let turnID: String?; let since: Date }
+    private var observedWaitingSince: [RuntimeThreadKey: Waiting] = [:]
     private var tokenReader: TokenUsageReader
     public init(root: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex"), execution: ExecutionObserving? = nil) {
         self.root = root
@@ -57,11 +58,13 @@ public final class ActivityRepository {
         var notice = history == nil ? "история codex недоступна. состояния временно неизвестны." : nil
         var liveIDs = Set<String>()
         var waitingIDs = Set<RuntimeThreadKey>()
-        func waitingStart(_ key:RuntimeThreadKey, _ state:ActivityState, reportedAt:Date? = nil) -> Date? {
+        func waitingStart(_ key:RuntimeThreadKey, _ state:ActivityState, turnID:String?, reportedAt:Date? = nil) -> Date? {
             guard state == .needsInput else { return nil }
             waitingIDs.insert(key)
-            let firstObserved = observedWaitingSince[key] ?? now
-            observedWaitingSince[key] = firstObserved
+            let previous = observedWaitingSince[key]
+            let changedTurn = previous?.turnID != nil && turnID != nil && previous?.turnID != turnID
+            let firstObserved = changedTurn ? now : previous?.since ?? now
+            observedWaitingSince[key] = Waiting(turnID:turnID ?? previous?.turnID, since:firstObserved)
             return reportedAt ?? firstObserved
         }
         for row in rows {
@@ -204,6 +207,7 @@ public final class ActivityRepository {
                 turnStartedAt:turnStart.map(Date.init(timeIntervalSince1970:)),
                 turnCompletedAt:completedAt, turnDuration:duration, pendingCount:resolved == nil ? pending : (fresh?.questions.pendingCount ?? 0),
                 waitingSince:waitingStart(RuntimeThreadKey(hostID:"local",threadID:id), status,
+                                          turnID:resolved == nil ? turnID : resolved?.turnID,
                                           reportedAt:resolved == nil ? tracked.tracker.oldestQuestionAt : nil),
                 awaitingExecutionConfirmation:resolved == nil && historyAvailable && turnStatus == "inProgress"
                     && executionStatus != .active, tokenUsage:tokenUsage,
@@ -244,7 +248,7 @@ public final class ActivityRepository {
                 project: Self.projectName(cwd: row["cwd"]?.string), summary: summary, state: status,
                 updatedAt: activity, turnStartedAt: live?.startedAt,
                 turnCompletedAt: live?.completedAt, turnDuration: live?.duration,
-                waitingSince:waitingStart(key,status), tokenUsage:live?.tokenUsage, turnID:live?.turnID))
+                waitingSince:waitingStart(key,status,turnID:live?.turnID), tokenUsage:live?.tokenUsage, turnID:live?.turnID))
         }
         if let hostID = ChatGPTCatalog.currentHost(in:root) {
             do {

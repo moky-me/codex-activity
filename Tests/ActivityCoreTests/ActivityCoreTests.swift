@@ -275,6 +275,7 @@ final class ActivityCoreTests {
             "sourceClientId": "owner", "params": ["hostId": key.hostID, "conversationId": key.threadID,
                 "change": ["type": "snapshot", "revision": 1, "conversationState": [
                     "threadRuntimeStatus": ["type": "active", "activeFlags": ["waitingOnApproval"]],
+                    "turns": [["turnId":"turn-A", "status":"inProgress", "turnStartedAtMs":now.timeIntervalSince1970 * 1000]],
                     "latestTokenUsageInfo": ["total": ["totalTokens": 120], "last": ["totalTokens": 19]]
                 ]]]
         ], watching: [key])
@@ -287,6 +288,18 @@ final class ActivityCoreTests {
         XCTAssertEqual(waiting?.waitingSince, now)
         XCTAssertEqual(try repository.load(now:now.addingTimeInterval(90)).cards.first?.waitingSince, now)
         XCTAssertEqual(waiting?.url, ActivityPolicy.threadURL(id: oldRemoteID, host: "ssh:test"))
+        let nextWait = now.addingTimeInterval(3600)
+        _ = projection.consume([
+            "type":"broadcast", "method":"thread-stream-state-changed", "version":11,
+            "sourceClientId":"owner", "params":["hostId":key.hostID, "conversationId":key.threadID,
+                "change":["type":"snapshot", "revision":2, "conversationState":[
+                    "threadRuntimeStatus":["type":"active", "activeFlags":["waitingOnApproval"]],
+                    "turns":[["turnId":"turn-B", "status":"inProgress", "turnStartedAtMs":nextWait.timeIntervalSince1970 * 1000]]
+                ]]]
+        ], watching:[key])
+        live.remote = projection.remoteActivities
+        XCTAssertEqual(try repository.load(now:nextWait).cards.first?.waitingSince, nextWait)
+        XCTAssertEqual(try repository.load(now:nextWait.addingTimeInterval(90)).cards.first?.waitingSince, nextWait)
         live.remote = [:]
         let afterDisconnect = try repository.load(now: now).cards
         XCTAssertFalse(afterDisconnect.contains { $0.threadID == oldRemoteID })

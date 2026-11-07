@@ -32,7 +32,7 @@ if "$universal"; then
     lipo -create "$arm/CodexActivity" "$intel/CodexActivity" -output "$app/Contents/MacOS/CodexActivity"
     lipo -create "$arm/ActivityLauncher" "$intel/ActivityLauncher" -output "$helper/Contents/MacOS/ActivityLauncher"
 else
-    binaries=$(build_binaries)
+    binaries=$(build_binaries --triple "$(uname -m)-apple-macosx14.0")
     cp "$binaries/CodexActivity" "$app/Contents/MacOS/CodexActivity"
     cp "$binaries/ActivityLauncher" "$helper/Contents/MacOS/ActivityLauncher"
 fi
